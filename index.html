@@ -1218,7 +1218,11 @@ function autoLink(){
 let tt;
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1600); }
 
-if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+if('serviceWorker' in navigator){
+  let _rl=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(_rl)return; _rl=true; location.reload(); });
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
 boot();
 setTimeout(hideSplash,4000); // por si algo tarda, nunca se queda pegado
 </script>

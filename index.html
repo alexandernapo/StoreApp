@@ -91,6 +91,7 @@
   .line .nm span{font-size:12px;color:var(--muted)}
   .stepper{display:flex;align-items:center;gap:2px}
   .stepper button{width:32px;height:32px;border-radius:9px;background:var(--surface);font-size:20px;font-weight:700;color:var(--brand)}
+  .stepper button:disabled{opacity:.3}
   .stepper .q{width:34px;text-align:center;font-weight:700}
   .line .lt{width:66px;text-align:right;font-weight:700}
   .line .rm{color:var(--bad);font-size:20px;width:28px;text-align:center}
@@ -199,6 +200,38 @@
   .lstat .d{width:9px;height:9px;border-radius:50%;background:currentColor}
   @keyframes flash{0%{background:var(--ok)}100%{background:var(--brand)}}
   header.pulse{animation:flash .5s ease-out}
+  .periodTabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:5px;margin-bottom:12px}
+  .periodTabs button{flex:1;padding:9px;border-radius:9px;font-weight:700;color:var(--muted);font-size:14px}
+  .periodTabs button.on{background:var(--brand);color:#fff}
+  .bigsale{padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:2px}
+  .bigsale span{color:var(--muted);font-weight:600;font-size:13px}
+  .bigsale b{font-size:34px;letter-spacing:-1px;color:var(--brand-dark)}
+  .chartCard{margin-bottom:12px}
+  .chartCard h4,.card h4{margin:0;padding:13px 14px 2px;font-size:14px}
+  .stat span{display:flex;align-items:center;gap:5px}
+  .miniInput{width:120px;padding:8px;border:1px solid var(--line);border-radius:9px;text-align:right;font-weight:700}
+  .vbars{display:flex;align-items:flex-end;gap:4px;height:150px;padding:12px 14px 14px}
+  .vbars .col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%}
+  .vbars .bar{width:72%;max-width:30px;background:var(--brand);border-radius:5px 5px 0 0;transition:height .35s ease}
+  .vbars .bar.hl{background:var(--accent)}
+  .vbars .lbl{font-size:10px;color:var(--muted);white-space:nowrap}
+  .vbars .val{font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap;height:11px}
+  .hbars{padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+  .hrow{display:flex;align-items:center;gap:8px}
+  .hrow .ic{width:20px;text-align:center;font-size:15px;flex:none}
+  .hrow .hl2{width:32%;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hrow .track{flex:1;background:var(--surface);border-radius:8px;height:16px;overflow:hidden}
+  .hrow .fill{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--ok));border-radius:8px;min-width:4px}
+  .hrow .v{font-size:12px;font-weight:700;min-width:50px;text-align:right;flex:none}
+  .emptyc{padding:22px;text-align:center;color:var(--muted);font-size:13px;line-height:1.5}
+  .acc .m{border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--card)}
+  .acc .mh{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;font-weight:700;gap:10px}
+  .acc .mt{font-weight:800;text-transform:capitalize}
+  .acc .mb{display:none;padding:0 14px 13px;color:var(--muted);font-size:13px;line-height:1.8}
+  .acc .m.open .mb{display:block}
+  .acc .chev{transition:transform .2s} .acc .m.open .chev{transform:rotate(180deg)}
+  .av{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--surface);border:2px solid var(--ok);flex:none}
+  .av.warn{border-color:var(--warn)} .av.bad{border-color:var(--bad)}
   .cam{position:fixed;inset:0;background:#000;z-index:300;display:none;flex-direction:column}
   .cam.open{display:flex}
   .cam video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
@@ -312,28 +345,43 @@
 
   <!-- REPORTES -->
   <section class="view" id="v-rep">
+    <div class="periodTabs">
+      <button data-p="dia" class="on" onclick="setPeriod('dia')">Día</button>
+      <button data-p="semana" onclick="setPeriod('semana')">Semana</button>
+      <button data-p="mes" onclick="setPeriod('mes')">Mes</button>
+    </div>
+
+    <div class="card bigsale"><span id="repPeriodLbl">Ventas de hoy</span><b class="num" id="repTotal">$0.00</b></div>
+
     <div class="stats">
-      <div class="card stat"><span>Efectivo hoy</span><b class="num" id="rEfe">$0.00</b></div>
-      <div class="card stat"><span>Transferencias hoy</span><b class="num" id="rTra">$0.00</b></div>
-      <div class="card stat"><span>Salidas caja chica</span><b class="num" id="rSal">$0.00</b></div>
-      <div class="card stat"><span>Ventas hoy</span><b class="num" id="rCnt">0</b></div>
+      <div class="card stat"><span>💵 Efectivo</span><b class="num" id="rEfe">$0.00</b></div>
+      <div class="card stat"><span>📱 Transferencias</span><b class="num" id="rTra">$0.00</b></div>
+      <div class="card stat"><span>🧾 N.º ventas</span><b class="num" id="rCnt">0</b></div>
+      <div class="card stat"><span>📤 Salidas</span><b class="num" id="rSal">$0.00</b></div>
     </div>
 
-    <h2>Cierre de caja · <span id="repFecha"></span></h2>
+    <div class="card chartCard"><h4 id="chartVentasTit">📈 Ventas</h4><div id="chartVentas"></div></div>
+    <div class="card chartCard"><h4>🏷️ Categorías más vendidas</h4><div id="chartCat"></div></div>
+    <div class="card chartCard"><h4>🔝 Top productos</h4><div id="topList"></div></div>
+
+    <h2 style="margin-top:20px">🧮 Cierre de caja de hoy</h2>
     <div class="card" style="padding:6px 4px;margin-bottom:14px">
-      <div class="rowline"><span>Efectivo esperado en gaveta</span><b class="num" id="espEfe">$0.00</b></div>
+      <div class="rowline" style="align-items:center"><span>Fondo / base de caja chica</span>
+        <input id="baseCaja" class="num miniInput" type="number" inputmode="decimal" placeholder="0.00" oninput="setBase()"></div>
+      <div class="rowline"><span>+ Ventas en efectivo (hoy)</span><b class="num" id="cEfe">$0.00</b></div>
+      <div class="rowline"><span>− Salidas de caja chica (hoy)</span><b class="num" id="cSal">$0.00</b></div>
+      <div class="rowline"><span><b>Efectivo esperado en gaveta</b></span><b class="num" id="espEfe">$0.00</b></div>
       <div class="rowline" style="align-items:center"><span>Dinero real contado</span>
-        <input id="realCaja" class="num" type="number" inputmode="decimal" placeholder="0.00"
-          style="width:110px;padding:8px;border:1px solid var(--line);border-radius:9px;text-align:right;font-weight:700" oninput="calcCierre()"></div>
+        <input id="realCaja" class="num miniInput" type="number" inputmode="decimal" placeholder="0.00" oninput="calcCierre()"></div>
     </div>
-    <div class="diff ok" id="diffBox"><span>Diferencia</span><span class="num" id="diffVal">$0.00</span></div>
+    <div class="diff ok" id="diffBox"><span>Diferencia</span><span class="num" id="diffVal">—</span></div>
 
-    <h2 style="margin-top:20px">Salidas de caja chica
+    <h2 style="margin-top:20px">📤 Salidas de caja chica
       <button onclick="openSalida()" style="float:right;color:var(--brand);font-weight:800">+ Registrar</button></h2>
     <div class="card" id="salidasList" style="padding:2px 4px"></div>
 
-    <h2 style="margin-top:20px">Top productos más vendidos</h2>
-    <div class="card" id="topList" style="padding:2px 4px"></div>
+    <h2 style="margin-top:20px">🗓️ Meses anteriores</h2>
+    <div class="acc" id="mesesList"></div>
 
     <button class="ghost" style="margin-top:22px;max-width:260px" onclick="resetDemo()">Reiniciar datos de ejemplo</button>
   </section>
@@ -372,7 +420,7 @@ let P=[], V=[], S=[], CFG={store:"Mi Tienda"};
 let cart=[], pago="efectivo";
 const $=id=>document.getElementById(id);
 const money=n=>"$"+(Math.round(n*100)/100).toFixed(2);
-const todayKey=()=>new Date().toISOString().slice(0,10);
+const todayKey=()=>{const x=new Date();return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const EMOJI={Bebidas:"🥤",Lácteos:"🥛",Snacks:"🍪",Abarrotes:"🍚",Aseo:"🧼",Panadería:"🥖","Frutas y verduras":"🥑",Otros:"📦",Huevos:"🥚",Recargas:"📶"};
 const CATS=["Bebidas","Lácteos","Snacks","Abarrotes","Panadería","Frutas y verduras","Aseo","Recargas","Otros"];
@@ -474,23 +522,34 @@ function clearScan(){ $("scan").value=""; $("dropdown").innerHTML=""; $("scan").
 function addToCart(id,qty=1){
   const p=P.find(x=>x.id===id); if(!p) return;
   const l=cart.find(x=>x.id===id);
-  if(l) l.qty+=qty; else cart.push({id,name:p.name,price:p.price,qty});
-  renderCart(); toast(p.name+" agregado");
+  const enCarrito=l?l.qty:0;
+  if(p.stock<=0){ toast("Sin stock: "+p.name); return; }
+  if(enCarrito+qty>p.stock){
+    const puede=p.stock-enCarrito;
+    if(puede<=0){ toast("Solo hay "+p.stock+" de "+p.name); return; }
+    qty=puede; toast("Solo quedan "+p.stock+" de "+p.name);
+  } else { toast(p.name+" agregado"); }
+  if(l) l.qty+=qty; else cart.push({id,name:p.name,price:p.price,qty,category:p.category});
+  renderCart();
 }
 function changeQty(id,d){
   const l=cart.find(x=>x.id===id); if(!l)return;
+  const p=P.find(x=>x.id===l.id);
+  if(d>0 && p && l.qty>=p.stock){ toast("Solo hay "+p.stock+" de "+p.name); return; }
   l.qty+=d; if(l.qty<=0) cart=cart.filter(x=>x.id!==id);
   renderCart();
 }
 function renderCart(){
   const c=$("cart");
   if(!cart.length){ c.innerHTML='<div class="empty">Escanea un producto o toca un botón rápido para empezar.</div>'; }
-  else{ c.innerHTML=cart.map(l=>`<div class="line">
-      <div class="nm"><b>${l.name}</b><span class="num">${money(l.price)} c/u</span></div>
+  else{ c.innerHTML=cart.map(l=>{
+      const p=P.find(x=>x.id===l.id), max=p?p.stock:Infinity, tope=l.qty>=max;
+      return `<div class="line">
+      <div class="nm"><b>${l.name}</b><span class="num">${money(l.price)} c/u${tope?' · <span style="color:var(--warn)">máx '+max+'</span>':''}</span></div>
       <div class="stepper"><button onclick="changeQty('${l.id}',-1)">–</button>
-        <span class="q num">${l.qty}</span><button onclick="changeQty('${l.id}',1)">+</button></div>
+        <span class="q num">${l.qty}</span><button onclick="changeQty('${l.id}',1)" ${tope?'disabled':''}>+</button></div>
       <div class="lt num">${money(l.price*l.qty)}</div>
-      <button class="rm" onclick="changeQty('${l.id}',-99)">×</button></div>`).join(""); }
+      <button class="rm" onclick="changeQty('${l.id}',-99)">×</button></div>`;}).join(""); }
   const t=cart.reduce((s,l)=>s+l.price*l.qty,0);
   $("total").textContent=money(t);
   $("cobrar").disabled=!cart.length;
@@ -521,7 +580,7 @@ async function cobrar(){
     if(r>0 && r<t){ toast("El monto recibido es menor al total"); return; } }
   // descontar stock
   cart.forEach(l=>{ const p=P.find(x=>x.id===l.id); if(p) p.stock=Math.max(0,p.stock-l.qty); });
-  V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty})),total:t,pago});
+  V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category})),total:t,pago});
   await sSet("productos",P); await sSet("ventas",V);
   cart=[]; $("recibi").value=""; renderCart(); renderInv(); updateHoy();
   toast("Venta cobrada · "+money(t)); $("scan").focus();
@@ -550,7 +609,7 @@ function renderInv(){
     &&(!fc||p.category===fc)&&(!fl||p.location===fl)&&(!fe||estado(p)===fe));
   list.sort((a,b)=>({bad:0,warn:1,ok:2}[estado(a)]-{bad:0,warn:1,ok:2}[estado(b)]));
   $("invList").innerHTML=list.length?list.map(p=>`<div class="prod" onclick="openProd('${p.id}')">
-    <div class="dot ${estado(p)}"></div>
+    <div class="av ${estado(p)}">${EMOJI[p.category]||'📦'}</div>
     <div class="info"><b>${p.name}</b><span>${p.barcode?p.barcode+" · ":""}<span class="pill">${p.category}</span>${p.location?'<span class="pill">'+p.location+'</span>':''}</span></div>
     <div class="stk num">${p.stock}<small>mín ${p.minStock}</small></div>
     <div class="pr num">${money(p.price)}</div></div>`).join("")
@@ -719,26 +778,102 @@ async function saveSalida(){
   S.push({id:uid(),date:todayKey(),ts:Date.now(),concept:c,amount:m});
   await sSet("salidas",S); closeModal(); renderRep(); toast("Salida registrada");
 }
+let repPeriod='dia';
+function setPeriod(p){ repPeriod=p; document.querySelectorAll('.periodTabs button').forEach(b=>b.classList.toggle('on',b.dataset.p===p)); renderRep(); }
+function dkey(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+function periodDates(){
+  const now=new Date(), out=[];
+  if(repPeriod==='dia'){ out.push(todayKey()); }
+  else if(repPeriod==='semana'){ for(let i=6;i>=0;i--){ const d=new Date(now); d.setDate(now.getDate()-i); out.push(dkey(d)); } }
+  else { const y=now.getFullYear(),m=now.getMonth(),n=new Date(y,m+1,0).getDate(); for(let i=1;i<=n;i++) out.push(dkey(new Date(y,m,i))); }
+  return out;
+}
+function catOf(it){ return it.category || (P.find(p=>p.id===it.id)||{}).category || 'Otros'; }
+
 function renderRep(){
-  $("repFecha").textContent=new Date().toLocaleDateString("es-EC",{weekday:"long",day:"numeric",month:"long"});
+  const dates=periodDates(), set=new Set(dates);
+  const sv=V.filter(v=>set.has(v.date));
+  const efe=sv.filter(v=>v.pago==='efectivo').reduce((s,v)=>s+v.total,0);
+  const tra=sv.filter(v=>v.pago==='transferencia').reduce((s,v)=>s+v.total,0);
+  const salP=S.filter(x=>set.has(x.date)).reduce((s,x)=>s+x.amount,0);
+  $("repPeriodLbl").textContent = repPeriod==='dia'?'Ventas de hoy':repPeriod==='semana'?'Ventas de la semana':'Ventas del mes';
+  $("repTotal").textContent=money(efe+tra);
+  $("rEfe").textContent=money(efe); $("rTra").textContent=money(tra); $("rCnt").textContent=sv.length; $("rSal").textContent=money(salP);
+
+  drawSalesChart(dates);
+  // categorías
+  const ac={}; sv.forEach(v=>v.items.forEach(it=>{const c=catOf(it);ac[c]=(ac[c]||0)+it.price*it.qty;}));
+  const cr=Object.entries(ac).sort((a,b)=>b[1]-a[1]).slice(0,6), cmx=cr.length?cr[0][1]:0;
+  $("chartCat").innerHTML=cr.length?'<div class="hbars">'+cr.map(([c,v])=>hbar(EMOJI[c]||'📦',c,v,cmx,money(v))).join('')+'</div>':'<div class="emptyc">Sin ventas en este periodo.</div>';
+  // top productos
+  const ap={}; sv.forEach(v=>v.items.forEach(it=>{ap[it.name]=(ap[it.name]||0)+it.qty;}));
+  const tr=Object.entries(ap).sort((a,b)=>b[1]-a[1]).slice(0,8), tmx=tr.length?tr[0][1]:0;
+  $("topList").innerHTML=tr.length?'<div class="hbars">'+tr.map(([n,q])=>hbar('',n,q,tmx,q+' u')).join('')+'</div>':'<div class="emptyc">Aún no hay ventas.</div>';
+
+  // salidas de hoy
+  const sl=S.filter(x=>x.date===todayKey()).sort((a,b)=>b.ts-a.ts);
+  $("salidasList").innerHTML=sl.length?sl.map(s=>`<div class="rowline"><span>${s.concept}</span><b class="num">−${money(s.amount).slice(1)}</b></div>`).join(""):'<div class="rowline" style="color:var(--muted)">Sin salidas hoy.</div>';
+
+  if(document.activeElement!==$("baseCaja")) $("baseCaja").value = CFG.base?CFG.base:"";
+  recomputeCierre();
+  drawMonths();
+}
+function recomputeCierre(){
   const dv=V.filter(v=>v.date===todayKey());
-  const efe=dv.filter(v=>v.pago==="efectivo").reduce((s,v)=>s+v.total,0);
-  const tra=dv.filter(v=>v.pago==="transferencia").reduce((s,v)=>s+v.total,0);
-  const sal=S.filter(v=>v.date===todayKey()).reduce((s,v)=>s+v.amount,0);
-  $("rEfe").textContent=money(efe); $("rTra").textContent=money(tra);
-  $("rSal").textContent=money(sal); $("rCnt").textContent=dv.length;
-  $("espEfe").textContent=money(efe-sal);
-  window._espEfe=efe-sal; calcCierre();
-  // salidas
-  const sl=S.filter(v=>v.date===todayKey()).sort((a,b)=>b.ts-a.ts);
-  $("salidasList").innerHTML=sl.length?sl.map(s=>`<div class="rowline"><span>${s.concept}</span><b class="num">−${money(s.amount)}</b></div>`).join("")
-    :'<div class="rowline" style="color:var(--muted)">Sin salidas hoy.</div>';
-  // top vendidos (histórico)
-  const agg={};
-  V.forEach(v=>v.items.forEach(it=>{agg[it.name]=(agg[it.name]||0)+it.qty;}));
-  const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  $("topList").innerHTML=top.length?top.map(([n,q],i)=>`<div class="rowline"><span>${i+1}. ${n}</span><b class="num">${q} u</b></div>`).join("")
-    :'<div class="rowline" style="color:var(--muted)">Aún no hay ventas registradas.</div>';
+  const efeHoy=dv.filter(v=>v.pago==='efectivo').reduce((s,v)=>s+v.total,0);
+  const salHoy=S.filter(x=>x.date===todayKey()).reduce((s,x)=>s+x.amount,0);
+  const base=+(CFG.base||0);
+  $("cEfe").textContent=money(efeHoy); $("cSal").textContent=money(salHoy);
+  window._espEfe=base+efeHoy-salHoy; $("espEfe").textContent=money(window._espEfe);
+  calcCierre();
+}
+function setBase(){ CFG.base=+$("baseCaja").value||0; sSet("config",CFG); recomputeCierre(); }
+
+function hbar(ic,label,val,mx,valTxt){
+  const pct=mx>0?Math.max(4,Math.round(val/mx*100)):0;
+  return `<div class="hrow"><span class="ic">${ic||''}</span><span class="hl2">${label}</span><span class="track"><span class="fill" style="width:${pct}%"></span></span><span class="v num">${valTxt}</span></div>`;
+}
+function drawSalesChart(dates){
+  const tit=$("chartVentasTit"); let bars=[], showVal=true;
+  if(repPeriod==='dia'){
+    tit.textContent='📈 Ventas de hoy por hora';
+    const slots=[6,8,10,12,14,16,18,20], vals=slots.map(()=>0);
+    V.filter(v=>v.date===todayKey()).forEach(v=>{ const h=new Date(v.ts).getHours(); let i=0; for(let k=0;k<slots.length;k++){ if(h>=slots[k])i=k; } vals[i]+=v.total; });
+    bars=slots.map((s,i)=>({label:s+'h',value:vals[i],hl:false}));
+  } else if(repPeriod==='semana'){
+    tit.textContent='📈 Ventas por día (7 días)';
+    const wd=['D','L','M','X','J','V','S'];
+    bars=dates.map(d=>({label:wd[new Date(d+'T12:00:00').getDay()],value:V.filter(v=>v.date===d).reduce((s,v)=>s+v.total,0),hl:d===todayKey()}));
+  } else {
+    tit.textContent='📈 Ventas del mes por día'; showVal=false;
+    bars=dates.map(d=>{const dd=+d.slice(8);return{label:(dd===1||dd%5===0)?String(dd):'',value:V.filter(v=>v.date===d).reduce((s,v)=>s+v.total,0),hl:d===todayKey()};});
+  }
+  drawVBars($("chartVentas"),bars,showVal);
+}
+function drawVBars(el,bars,showVal){
+  const mx=Math.max(1,...bars.map(b=>b.value));
+  if(!bars.some(b=>b.value>0)){ el.innerHTML='<div class="emptyc">Sin ventas en este periodo.</div>'; return; }
+  el.innerHTML='<div class="vbars">'+bars.map(b=>{
+    const h=b.value>0?Math.max(4,Math.round(b.value/mx*100)):0;
+    return `<div class="col"><span class="val">${showVal&&b.value>0?money(b.value).slice(1):''}</span><span class="bar ${b.hl?'hl':''}" style="height:${h}%"></span><span class="lbl">${b.label}</span></div>`;
+  }).join('')+'</div>';
+}
+function monthName(m){ const [y,mo]=m.split('-'); return new Date(+y,+mo-1,1).toLocaleDateString('es-EC',{month:'long',year:'numeric'}); }
+function drawMonths(){
+  const cur=todayKey().slice(0,7), byM={}, salM={};
+  V.forEach(v=>{const m=v.date.slice(0,7); if(m!==cur)(byM[m]=byM[m]||[]).push(v);});
+  S.forEach(x=>{const m=x.date.slice(0,7); if(m!==cur)salM[m]=(salM[m]||0)+x.amount;});
+  const months=Object.keys(byM).sort().reverse();
+  if(!months.length){ $("mesesList").innerHTML='<div class="emptyc">Aún no hay meses anteriores. Al pasar de mes, aquí verás el resumen plegable de cada uno.</div>'; return; }
+  $("mesesList").innerHTML=months.map(m=>{
+    const vs=byM[m], tot=vs.reduce((s,v)=>s+v.total,0), efe=vs.filter(v=>v.pago==='efectivo').reduce((s,v)=>s+v.total,0);
+    const ag={}; vs.forEach(v=>v.items.forEach(it=>{const c=catOf(it);ag[c]=(ag[c]||0)+it.price*it.qty;}));
+    const tc=Object.entries(ag).sort((a,b)=>b[1]-a[1])[0];
+    return `<div class="m"><div class="mh" onclick="this.parentNode.classList.toggle('open')">
+      <span><span class="mt">${monthName(m)}</span><br><span style="font-size:12px;color:var(--muted)">${vs.length} ventas</span></span>
+      <span style="text-align:right;white-space:nowrap"><b class="num">${money(tot)}</b> <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></div>
+      <div class="mb">💵 Efectivo: ${money(efe)} &nbsp;·&nbsp; 📱 Transfer.: ${money(tot-efe)}<br>📤 Salidas: ${money(salM[m]||0)}<br>🏷️ Categoría top: ${tc?tc[0]+' ('+money(tc[1])+')':'—'}</div></div>`;
+  }).join('');
 }
 function calcCierre(){
   const real=parseFloat($("realCaja").value);

@@ -42,7 +42,7 @@
   @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-16px)}}
   @keyframes pop{0%{transform:scale(.5) rotate(-6deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
   /* Top bar */
-  header{background:var(--brand);color:#fff;padding:10px 16px;display:flex;align-items:center;
+  header{background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;padding:10px 16px;display:flex;align-items:center;
     justify-content:space-between;gap:12px}
   header .store{font-weight:700;font-size:16px;letter-spacing:-.2px;display:flex;align-items:center;gap:8px}
   header .store input{background:rgba(255,255,255,.14);border:none;color:#fff;border-radius:8px;
@@ -203,6 +203,14 @@
   .periodTabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:5px;margin-bottom:12px}
   .periodTabs button{flex:1;padding:9px;border-radius:9px;font-weight:700;color:var(--muted);font-size:14px}
   .periodTabs button.on{background:var(--brand);color:#fff}
+  .metricRow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  .metricRow>span{font-size:13px;color:var(--muted);font-weight:600}
+  .metricTabs{display:flex;gap:5px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:4px}
+  .metricTabs button{padding:7px 12px;border-radius:8px;font-weight:700;color:var(--muted);font-size:13px}
+  .metricTabs button.on{background:var(--brand);color:#fff}
+  .themeRow{display:flex;gap:10px;flex-wrap:wrap}
+  .themeRow .sw{width:46px;height:46px;border-radius:13px;border:3px solid transparent;color:#fff;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+  .themeRow .sw.on{border-color:var(--ink)}
   .bigsale{padding:16px;margin-bottom:12px;display:flex;flex-direction:column;gap:2px}
   .bigsale span{color:var(--muted);font-weight:600;font-size:13px}
   .bigsale b{font-size:34px;letter-spacing:-1px;color:var(--brand-dark)}
@@ -246,7 +254,7 @@
   .cam .err.on{display:flex}
   .cam .err p{margin:0;line-height:1.5;font-size:15px;color:#ddd}
   .cam .err button{background:var(--accent);color:#3a2600;padding:13px 24px;border-radius:12px;font-weight:800}
-  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;
+  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);background:#1E2A24;color:#fff;
     padding:12px 20px;border-radius:999px;font-weight:700;opacity:0;transition:.25s;z-index:200;pointer-events:none;font-size:14px}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
@@ -360,9 +368,17 @@
       <div class="card stat"><span>📤 Salidas</span><b class="num" id="rSal">$0.00</b></div>
     </div>
 
+    <div class="metricRow">
+      <span>Ver gráficas por:</span>
+      <div class="metricTabs">
+        <button data-mm="u" class="on" onclick="setMetric('u')"># Unidades</button>
+        <button data-mm="$" onclick="setMetric('$')">$ Dinero</button>
+      </div>
+    </div>
+
     <div class="card chartCard"><h4 id="chartVentasTit">📈 Ventas</h4><div id="chartVentas"></div></div>
     <div class="card chartCard"><h4>🏷️ Categorías más vendidas</h4><div id="chartCat"></div></div>
-    <div class="card chartCard"><h4>🔝 Top productos</h4><div id="topList"></div></div>
+    <div class="card chartCard"><h4>🔝 Top productos (unidades)</h4><div id="topList"></div></div>
 
     <h2 style="margin-top:20px">🧮 Cierre de caja de hoy</h2>
     <div class="card" style="padding:6px 4px;margin-bottom:14px">
@@ -382,6 +398,9 @@
 
     <h2 style="margin-top:20px">🗓️ Meses anteriores</h2>
     <div class="acc" id="mesesList"></div>
+
+    <h2 style="margin-top:20px">🎨 Tema de color</h2>
+    <div class="themeRow" id="themeRow"></div>
 
     <button class="ghost" style="margin-top:22px;max-width:260px" onclick="resetDemo()">Reiniciar datos de ejemplo</button>
   </section>
@@ -470,6 +489,7 @@ async function boot(){
   V=await sGet("ventas",[]);
   S=await sGet("salidas",[]);
   CFG=await sGet("config",{store:"Mi Tienda"});
+  applyTheme(CFG.theme||'verde');
   $("storeName").value=CFG.store||"";
   { const sn=$("splashName"); if(sn) sn.textContent=CFG.store||"Mi Tienda"; }
   $("storeName").oninput=e=>{CFG.store=e.target.value;sSet("config",CFG);};
@@ -515,7 +535,7 @@ function onEnter(){
   let p=P.find(x=>x.barcode&&x.barcode===q);
   if(!p){ const m=P.filter(x=>x.name.toLowerCase().includes(q.toLowerCase())); if(m.length===1)p=m[0]; }
   if(p){ addToCart(p.id); clearScan(); }
-  else { openProd(null,q); } // código desconocido -> alta rápida
+  else { toast("⚠ Producto no registrado. Agrégalo en Inventario."); clearScan(); }
 }
 function clearScan(){ $("scan").value=""; $("dropdown").innerHTML=""; $("scan").focus(); }
 
@@ -778,8 +798,11 @@ async function saveSalida(){
   S.push({id:uid(),date:todayKey(),ts:Date.now(),concept:c,amount:m});
   await sSet("salidas",S); closeModal(); renderRep(); toast("Salida registrada");
 }
-let repPeriod='dia';
+let repPeriod='dia', repMetric='u';
 function setPeriod(p){ repPeriod=p; document.querySelectorAll('.periodTabs button').forEach(b=>b.classList.toggle('on',b.dataset.p===p)); renderRep(); }
+function setMetric(m){ repMetric=m; document.querySelectorAll('.metricTabs button').forEach(b=>b.classList.toggle('on',b.dataset.mm===m)); renderRep(); }
+function unitsOf(v){ return v.items.reduce((s,it)=>s+it.qty,0); }
+function fmtVal(n){ return repMetric==='u'? String(Math.round(n)) : money(n).slice(1); }
 function dkey(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
 function periodDates(){
   const now=new Date(), out=[];
@@ -801,10 +824,10 @@ function renderRep(){
   $("rEfe").textContent=money(efe); $("rTra").textContent=money(tra); $("rCnt").textContent=sv.length; $("rSal").textContent=money(salP);
 
   drawSalesChart(dates);
-  // categorías
-  const ac={}; sv.forEach(v=>v.items.forEach(it=>{const c=catOf(it);ac[c]=(ac[c]||0)+it.price*it.qty;}));
+  // categorías (según métrica elegida)
+  const ac={}; sv.forEach(v=>v.items.forEach(it=>{const c=catOf(it); ac[c]=(ac[c]||0)+(repMetric==='u'?it.qty:it.price*it.qty);}));
   const cr=Object.entries(ac).sort((a,b)=>b[1]-a[1]).slice(0,6), cmx=cr.length?cr[0][1]:0;
-  $("chartCat").innerHTML=cr.length?'<div class="hbars">'+cr.map(([c,v])=>hbar(EMOJI[c]||'📦',c,v,cmx,money(v))).join('')+'</div>':'<div class="emptyc">Sin ventas en este periodo.</div>';
+  $("chartCat").innerHTML=cr.length?'<div class="hbars">'+cr.map(([c,v])=>hbar(EMOJI[c]||'📦',c,v,cmx,repMetric==='u'?v+' u':money(v))).join('')+'</div>':'<div class="emptyc">Sin ventas en este periodo.</div>';
   // top productos
   const ap={}; sv.forEach(v=>v.items.forEach(it=>{ap[it.name]=(ap[it.name]||0)+it.qty;}));
   const tr=Object.entries(ap).sort((a,b)=>b[1]-a[1]).slice(0,8), tmx=tr.length?tr[0][1]:0;
@@ -817,6 +840,7 @@ function renderRep(){
   if(document.activeElement!==$("baseCaja")) $("baseCaja").value = CFG.base?CFG.base:"";
   recomputeCierre();
   drawMonths();
+  renderThemePicker();
 }
 function recomputeCierre(){
   const dv=V.filter(v=>v.date===todayKey());
@@ -829,24 +853,47 @@ function recomputeCierre(){
 }
 function setBase(){ CFG.base=+$("baseCaja").value||0; sSet("config",CFG); recomputeCierre(); }
 
+const THEMES={
+  verde :{n:'Verde', brand:'#0E6E4E',dark:'#0A5138',okbg:'#E7F4EE'},
+  teal  :{n:'Teal',  brand:'#0E7C86',dark:'#0A5A61',okbg:'#E3F3F5'},
+  azul  :{n:'Azul',  brand:'#1663B6',dark:'#10488A',okbg:'#E6EFFA'},
+  indigo:{n:'Índigo',brand:'#4F46B8',dark:'#372F8A',okbg:'#ECEBFB'},
+  vino  :{n:'Vino',  brand:'#A62B4D',dark:'#7C1F39',okbg:'#FBE9EE'},
+  oscuro:{n:'Oscuro',brand:'#19A56E',dark:'#0E6E4E',okbg:'#12362A',surface:'#0F1512',card:'#18201C',ink:'#E9F0EC',muted:'#9DB0A8',line:'#273029'}
+};
+function applyTheme(name){
+  const t=THEMES[name]||THEMES.verde, r=document.documentElement.style;
+  r.setProperty('--brand',t.brand); r.setProperty('--brand-dark',t.dark); r.setProperty('--okbg',t.okbg);
+  r.setProperty('--surface',t.surface||'#F7F6F3'); r.setProperty('--card',t.card||'#FFFFFF');
+  r.setProperty('--ink',t.ink||'#14211B'); r.setProperty('--muted',t.muted||'#5C6B63'); r.setProperty('--line',t.line||'#E4E7E2');
+  const meta=document.querySelector('meta[name=theme-color]'); if(meta)meta.setAttribute('content',t.brand);
+  CFG.theme=name;
+}
+function setTheme(name){ applyTheme(name); sSet('config',CFG); renderThemePicker(); }
+function renderThemePicker(){
+  const cur=CFG.theme||'verde', el=$("themeRow"); if(!el)return;
+  el.innerHTML=Object.keys(THEMES).map(k=>`<button class="sw ${k===cur?'on':''}" onclick="setTheme('${k}')" style="background:${THEMES[k].brand}" title="${THEMES[k].n}">${k===cur?'✓':''}</button>`).join('');
+}
+
 function hbar(ic,label,val,mx,valTxt){
   const pct=mx>0?Math.max(4,Math.round(val/mx*100)):0;
   return `<div class="hrow"><span class="ic">${ic||''}</span><span class="hl2">${label}</span><span class="track"><span class="fill" style="width:${pct}%"></span></span><span class="v num">${valTxt}</span></div>`;
 }
 function drawSalesChart(dates){
-  const tit=$("chartVentasTit"); let bars=[], showVal=true;
+  const tit=$("chartVentasTit"); let bars=[], showVal=true; const U=repMetric==='u';
+  const sumFor=d=>V.filter(v=>v.date===d).reduce((s,v)=>s+(U?unitsOf(v):v.total),0);
   if(repPeriod==='dia'){
-    tit.textContent='📈 Ventas de hoy por hora';
+    tit.textContent=U?'📈 Unidades vendidas hoy (por hora)':'📈 Ventas de hoy por hora';
     const slots=[6,8,10,12,14,16,18,20], vals=slots.map(()=>0);
-    V.filter(v=>v.date===todayKey()).forEach(v=>{ const h=new Date(v.ts).getHours(); let i=0; for(let k=0;k<slots.length;k++){ if(h>=slots[k])i=k; } vals[i]+=v.total; });
+    V.filter(v=>v.date===todayKey()).forEach(v=>{ const h=new Date(v.ts).getHours(); let i=0; for(let k=0;k<slots.length;k++){ if(h>=slots[k])i=k; } vals[i]+=U?unitsOf(v):v.total; });
     bars=slots.map((s,i)=>({label:s+'h',value:vals[i],hl:false}));
   } else if(repPeriod==='semana'){
-    tit.textContent='📈 Ventas por día (7 días)';
+    tit.textContent=U?'📈 Unidades por día (7 días)':'📈 Ventas por día (7 días)';
     const wd=['D','L','M','X','J','V','S'];
-    bars=dates.map(d=>({label:wd[new Date(d+'T12:00:00').getDay()],value:V.filter(v=>v.date===d).reduce((s,v)=>s+v.total,0),hl:d===todayKey()}));
+    bars=dates.map(d=>({label:wd[new Date(d+'T12:00:00').getDay()],value:sumFor(d),hl:d===todayKey()}));
   } else {
-    tit.textContent='📈 Ventas del mes por día'; showVal=false;
-    bars=dates.map(d=>{const dd=+d.slice(8);return{label:(dd===1||dd%5===0)?String(dd):'',value:V.filter(v=>v.date===d).reduce((s,v)=>s+v.total,0),hl:d===todayKey()};});
+    tit.textContent=U?'📈 Unidades del mes por día':'📈 Ventas del mes por día'; showVal=false;
+    bars=dates.map(d=>{const dd=+d.slice(8);return{label:(dd===1||dd%5===0)?String(dd):'',value:sumFor(d),hl:d===todayKey()};});
   }
   drawVBars($("chartVentas"),bars,showVal);
 }
@@ -855,7 +902,7 @@ function drawVBars(el,bars,showVal){
   if(!bars.some(b=>b.value>0)){ el.innerHTML='<div class="emptyc">Sin ventas en este periodo.</div>'; return; }
   el.innerHTML='<div class="vbars">'+bars.map(b=>{
     const h=b.value>0?Math.max(4,Math.round(b.value/mx*100)):0;
-    return `<div class="col"><span class="val">${showVal&&b.value>0?money(b.value).slice(1):''}</span><span class="bar ${b.hl?'hl':''}" style="height:${h}%"></span><span class="lbl">${b.label}</span></div>`;
+    return `<div class="col"><span class="val">${showVal&&b.value>0?fmtVal(b.value):''}</span><span class="bar ${b.hl?'hl':''}" style="height:${h}%"></span><span class="lbl">${b.label}</span></div>`;
   }).join('')+'</div>';
 }
 function monthName(m){ const [y,mo]=m.split('-'); return new Date(+y,+mo-1,1).toLocaleDateString('es-EC',{month:'long',year:'numeric'}); }
@@ -895,29 +942,39 @@ let _camStream=null,_camLoop=null,_camReader=null,_camCb=null,_camCont=false,_la
 
 async function openScanner(cb,opts){
   opts=opts||{}; _camCb=cb; _camCont=!!opts.continuous;
+  const qrMode=opts.mode==='qr';
   const el=$("cam"), v=$("camVideo"), err=$("camErr");
   err.classList.remove("on"); el.classList.add("open");
-  $("camHint").textContent=opts.hint||"Apunta al código de barras o QR dentro del recuadro";
+  $("camHint").textContent=opts.hint||(qrMode?"Apunta al QR de la caja":"Apunta solo al código de barras");
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.isSecureContext){
     return camError("La cámara no está disponible aquí. Abre la app en el navegador de tu teléfono por HTTPS (o instalada) para escanear.");
   }
+  const BAR=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','codabar'];
   try{
     if('BarcodeDetector' in window){
       let sup=[]; try{ sup=await BarcodeDetector.getSupportedFormats(); }catch(e){}
-      const want=['qr_code','ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','codabar'].filter(f=>!sup.length||sup.includes(f));
+      const base=qrMode?['qr_code']:BAR;
+      const want=base.filter(f=>!sup.length||sup.includes(f));
       const det=new BarcodeDetector(want.length?{formats:want}:undefined);
       _camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
       v.srcObject=_camStream; try{await v.play();}catch(e){}
       const tick=async()=>{
         if(!el.classList.contains("open"))return;
-        try{ const c=await det.detect(v); if(c&&c.length&&c[0].rawValue){ onScan(c[0].rawValue); if(!_camCont)return; } }catch(e){}
+        try{ const c=await det.detect(v); const hit=c&&c.find(x=>x.rawValue&&(qrMode? x.format==='qr_code' : x.format!=='qr_code'));
+          if(hit){ onScan(hit.rawValue); if(!_camCont)return; } }catch(e){}
         _camLoop=requestAnimationFrame(tick);
       };
       _camLoop=requestAnimationFrame(tick);
     }else{
       await loadZXing();
       _camReader=new ZXing.BrowserMultiFormatReader();
-      _camReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'}}},v,(res)=>{ if(res)onScan(res.getText()); });
+      _camReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'}}},v,(res)=>{
+        if(!res)return;
+        let isQR=false; try{ isQR = ZXing.BarcodeFormat && res.getBarcodeFormat()===ZXing.BarcodeFormat.QR_CODE; }catch(e){}
+        if(qrMode && !isQR) return;   // en emparejamiento solo QR
+        if(!qrMode && isQR) return;   // en productos ignora QR
+        onScan(res.getText());
+      });
     }
   }catch(e){
     camError(e&&e.name==='NotAllowedError'
@@ -1004,7 +1061,7 @@ function startPhonePair(){
    <button class="save" onclick="pairByCode()">Conectar</button>`);
 }
 function pairByCode(){ const c=($("pairCode").value||"").trim().toUpperCase(); if(c.length<4)return toast("Código incompleto"); linkCode=c; connect("phone"); phoneScanView(); }
-function scanPairQR(){ openScanner(v=>{ let c=v; try{ c=new URL(v).searchParams.get("scan")||v; }catch(e){} linkCode=String(c).trim().toUpperCase(); connect("phone"); phoneScanView(); }); }
+function scanPairQR(){ openScanner(v=>{ let c=v; try{ c=new URL(v).searchParams.get("scan")||v; }catch(e){} linkCode=String(c).trim().toUpperCase(); connect("phone"); phoneScanView(); },{mode:'qr'}); }
 
 function pairURL(){ return location.origin+location.pathname+"?scan="+linkCode; }
 function linkStatusView(){

@@ -399,6 +399,12 @@
     <h2 style="margin-top:20px">🗓️ Meses anteriores</h2>
     <div class="acc" id="mesesList"></div>
 
+    <h2 style="margin-top:20px">☁️ Base de datos en la nube</h2>
+    <div class="card" style="padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <span id="cloudLbl" style="font-weight:600">Datos solo en este aparato</span>
+      <button onclick="openCloud()" style="color:var(--brand);font-weight:800;white-space:nowrap">Configurar</button>
+    </div>
+
     <h2 style="margin-top:20px">🎨 Tema de color</h2>
     <div class="themeRow" id="themeRow"></div>
 
@@ -437,6 +443,9 @@
 /* ================= Estado y persistencia ================= */
 let P=[], V=[], S=[], CFG={store:"Mi Tienda"};
 let cart=[], pago="efectivo";
+let SB=null, sbOn=false;
+const SB_URL="https://inldqynhwmmkglqeplje.supabase.co";
+const SB_KEY="sb_publishable_4JXQBAHlF-kzM_2u6P9WRw_gxspo9nq";
 const $=id=>document.getElementById(id);
 const money=n=>"$"+(Math.round(n*100)/100).toFixed(2);
 const todayKey=()=>{const x=new Date();return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
@@ -451,7 +460,7 @@ function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open("tienda
 function idbGet(k){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction("kv","readonly").objectStore("kv").get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error);}));}
 function idbSet(k,v){return idbOpen().then(db=>new Promise((res,rej)=>{const tx=db.transaction("kv","readwrite");tx.objectStore("kv").put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>rej(tx.error);}));}
 
-async function sGet(k,def){
+async function localGet(k,def){
   try{
     let raw=null;
     if(typeof window.storage!=="undefined"&&window.storage){ const r=await window.storage.get(k,false); raw=r?r.value:null; }
@@ -460,14 +469,22 @@ async function sGet(k,def){
     return raw?JSON.parse(raw):def;
   }catch(e){ try{ const ls=localStorage.getItem(k); return ls?JSON.parse(ls):def; }catch(_){ return def; } }
 }
+async function sGet(k,def){
+  if(sbOn && SB){
+    try{ const {data,error}=await SB.from('kv').select('value').eq('key',k).maybeSingle();
+      if(!error){ if(data){ try{await idbSet(k,JSON.stringify(data.value));}catch(e){} return data.value; } return def; } }catch(e){}
+  }
+  return localGet(k,def);
+}
 async function sSet(k,v){
   const s=JSON.stringify(v);
   try{
     if(typeof window.storage!=="undefined"&&window.storage){ await window.storage.set(k,s,false); }
     else if(window.indexedDB){ await idbSet(k,s); }
     else { localStorage.setItem(k,s); }
-    return true;
-  }catch(e){ try{ localStorage.setItem(k,s); return true; }catch(_){ console.warn("db:",e); return false; } }
+  }catch(e){ try{ localStorage.setItem(k,s); }catch(_){ console.warn("db:",e); } }
+  if(sbOn && SB){ try{ await SB.from('kv').upsert({key:k,value:v,updated_at:new Date().toISOString()}); }catch(e){ console.warn("cloud:",e); } }
+  return true;
 }
 
 const SEED=[
@@ -483,12 +500,20 @@ const SEED=[
  {barcode:"",name:"Recarga $1",category:"Recargas",location:"Caja",cost:.95,price:1.00,stock:999,minStock:0,quick:true},
 ].map(x=>({id:uid(),...x}));
 
+async function load(k,seed){
+  let v=await sGet(k,null);
+  if(v!=null) return v;               // la nube (o local) ya lo tenía
+  if(sbOn) v=await localGet(k,null);  // nube vacía → rescata lo local
+  if(v==null) v=seed;                 // nada → semilla/predeterminado
+  await sSet(k,v);                    // guarda (local + nube si está activa)
+  return v;
+}
 async function boot(){
-  P=await sGet("productos",null);
-  if(!P){P=SEED;await sSet("productos",P);}
-  V=await sGet("ventas",[]);
-  S=await sGet("salidas",[]);
-  CFG=await sGet("config",{store:"Mi Tienda"});
+  await initCloudFromSaved();
+  P=await load("productos",SEED);
+  V=await load("ventas",[]);
+  S=await load("salidas",[]);
+  CFG=await load("config",{store:"Mi Tienda"});
   applyTheme(CFG.theme||'verde');
   $("storeName").value=CFG.store||"";
   { const sn=$("splashName"); if(sn) sn.textContent=CFG.store||"Mi Tienda"; }
@@ -841,6 +866,7 @@ function renderRep(){
   recomputeCierre();
   drawMonths();
   renderThemePicker();
+  { const cl=$("cloudLbl"); if(cl) cl.textContent = sbOn ? "☁️ Sincronizado en la nube ✓" : "Datos solo en este aparato"; }
 }
 function recomputeCierre(){
   const dv=V.filter(v=>v.date===todayKey());
@@ -873,6 +899,62 @@ function setTheme(name){ applyTheme(name); sSet('config',CFG); renderThemePicker
 function renderThemePicker(){
   const cur=CFG.theme||'verde', el=$("themeRow"); if(!el)return;
   el.innerHTML=Object.keys(THEMES).map(k=>`<button class="sw ${k===cur?'on':''}" onclick="setTheme('${k}')" style="background:${THEMES[k].brand}" title="${THEMES[k].n}">${k===cur?'✓':''}</button>`).join('');
+}
+
+/* ================= Nube (Supabase) ================= */
+function loadSB(){return new Promise((res,rej)=>{ if(window.supabase&&window.supabase.createClient)return res();
+  const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+  s.onload=()=>res(); s.onerror=()=>rej(new Error('cdn')); document.head.appendChild(s); });}
+function sbSaved(){ try{ return JSON.parse(localStorage.getItem('sbcfg')||'null'); }catch(e){ return null; } }
+async function initCloudFromSaved(){
+  const s=sbSaved() || ((SB_URL&&SB_KEY)?{url:SB_URL,key:SB_KEY}:null);
+  if(!s||!s.url||!s.key) return;
+  try{ await loadSB(); SB=window.supabase.createClient(s.url,s.key);
+    const {error}=await SB.from('kv').select('key').limit(1); if(error) throw error;
+    sbOn=true; subscribeCloud();
+  }catch(e){ sbOn=false; SB=null; }
+}
+function subscribeCloud(){
+  try{ SB.channel('kv-'+Math.random().toString(36).slice(2))
+    .on('postgres_changes',{event:'*',schema:'public',table:'kv'},p=>{ if(p.new&&p.new.key) applyCloudChange(p.new.key,p.new.value); })
+    .subscribe(); }catch(e){}
+}
+function applyCloudChange(k,val){
+  if(k==='productos') P=val||[];
+  else if(k==='ventas') V=val||[];
+  else if(k==='salidas') S=val||[];
+  else if(k==='config'){ CFG=val||CFG; applyTheme(CFG.theme||'verde'); if($("storeName"))$("storeName").value=CFG.store||""; }
+  else return;
+  renderAll();
+}
+async function connectCloud(){
+  const url=$("sbUrl").value.trim().replace(/\/$/,''), key=$("sbKey").value.trim();
+  if(!url||!key) return toast("Faltan los datos");
+  toast("Conectando…");
+  try{
+    await loadSB(); SB=window.supabase.createClient(url,key);
+    const {error}=await SB.from('kv').select('key').limit(1); if(error) throw error;
+    sbOn=true; localStorage.setItem('sbcfg',JSON.stringify({url,key}));
+    // Subir/traer datos: la nube manda si ya tiene; si está vacía, sube lo local
+    for(const [k,localVal] of [['productos',P],['ventas',V],['salidas',S],['config',CFG]]){
+      const {data}=await SB.from('kv').select('value').eq('key',k).maybeSingle();
+      if(data){ if(k==='productos')P=data.value; else if(k==='ventas')V=data.value; else if(k==='salidas')S=data.value; else CFG=data.value; }
+      else { await SB.from('kv').upsert({key:k,value:localVal,updated_at:new Date().toISOString()}); }
+    }
+    subscribeCloud(); applyTheme(CFG.theme||'verde');
+    closeModal(); renderAll(); toast("Conectado a la nube ✓");
+  }catch(e){ toast("No se pudo conectar. Revisa los datos y el SQL."); }
+}
+function disconnectCloud(){ try{localStorage.removeItem('sbcfg');}catch(e){} sbOn=false; SB=null; closeModal(); renderRep(); toast("Desconectado (datos locales)"); }
+function openCloud(){
+  const s=sbSaved()||{};
+  openModal(`<h3>☁️ Base de datos en la nube<button class="x" onclick="closeModal()">×</button></h3>
+   <div class="lstat ${sbOn?'ok':'wait'}"><span class="d"></span>${sbOn?'Conectado a la nube ✓':'No conectado · datos solo en este aparato'}</div>
+   <div class="hint">1) Crea un proyecto gratis en <b>supabase.com</b>.<br>2) En <b>SQL Editor</b> pega y ejecuta el código que te pasé.<br>3) En <b>Project Settings → API</b> copia el <b>Project URL</b> y la <b>anon public key</b> y pégalos aquí. Se guardan solo en este aparato.</div>
+   <div class="field"><label>Project URL</label><input id="sbUrl" placeholder="https://xxxxx.supabase.co" value="${s.url||''}"></div>
+   <div class="field"><label>anon public key</label><input id="sbKey" placeholder="eyJhbGciOi..." value="${s.key||''}"></div>
+   <button class="save" onclick="connectCloud()">${sbOn?'Reconectar':'Conectar'}</button>
+   ${sbOn?'<button class="ghost" onclick="disconnectCloud()">Desconectar (volver a local)</button>':''}`);
 }
 
 function hbar(ic,label,val,mx,valTxt){

@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#0E6E4E">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mi Tienda">
 <title>Mi Tienda · Caja e Inventario</title>
 <style>
   :root{
@@ -21,6 +27,20 @@
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
   input,select{font-family:inherit;font-size:16px}
 
+  /* ---- Pantalla de inicio (splash) ---- */
+  #splash{position:fixed;inset:0;z-index:500;background:linear-gradient(160deg,#0E6E4E,#0A5138);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .5s ease}
+  #splash.hide{opacity:0;pointer-events:none}
+  #splash .logo{width:120px;height:120px;animation:pop .6s cubic-bezier(.2,.9,.3,1.4) both;filter:drop-shadow(0 8px 20px rgba(0,0,0,.25))}
+  #splash .appname{color:#fff;font-size:23px;font-weight:800;letter-spacing:.3px}
+  #splash .tag{color:rgba(255,255,255,.75);font-size:13px;margin-top:-12px;font-weight:600}
+  #splash .loader{display:flex;gap:14px;margin-top:6px}
+  #splash .loader span{font-size:28px;display:inline-block;animation:bounce 1s infinite ease-in-out}
+  #splash .loader span:nth-child(2){animation-delay:.12s}
+  #splash .loader span:nth-child(3){animation-delay:.24s}
+  #splash .loader span:nth-child(4){animation-delay:.36s}
+  @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-16px)}}
+  @keyframes pop{0%{transform:scale(.5) rotate(-6deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
   /* Top bar */
   header{background:var(--brand);color:#fff;padding:10px 16px;display:flex;align-items:center;
     justify-content:space-between;gap:12px}
@@ -165,6 +185,20 @@
   .cambtn svg{width:24px;height:24px}
   .cambtn:active{transform:scale(.95)}
   .cambtn.f{width:48px;align-self:stretch;border-radius:11px}
+  #linkBtn{background:var(--card);color:var(--brand);border:1px solid var(--line)}
+  #linkBtn.on{background:var(--ok);color:#fff;border-color:var(--ok)}
+  .roleBtn{width:100%;padding:16px;border-radius:14px;border:1px solid var(--line);background:var(--surface);
+    display:flex;align-items:center;gap:12px;margin-bottom:10px;text-align:left}
+  .roleBtn .em{font-size:26px} .roleBtn b{display:block;font-size:15px} .roleBtn span{font-size:12px;color:var(--muted)}
+  .paircode{font-size:34px;font-weight:800;letter-spacing:6px;text-align:center;background:var(--surface);
+    border-radius:12px;padding:14px;margin:6px 0 12px}
+  #qrbox{display:flex;justify-content:center;margin:10px 0}
+  #qrbox img,#qrbox canvas{width:190px;height:190px;background:#fff;border-radius:12px;padding:8px;border:1px solid var(--line)}
+  .lstat{display:flex;align-items:center;gap:8px;justify-content:center;font-weight:700;padding:10px;border-radius:10px;margin-bottom:8px}
+  .lstat.wait{background:var(--warnbg);color:#8a5a00} .lstat.ok{background:var(--okbg);color:var(--brand-dark)} .lstat.bad{background:var(--badbg);color:var(--bad)}
+  .lstat .d{width:9px;height:9px;border-radius:50%;background:currentColor}
+  @keyframes flash{0%{background:var(--ok)}100%{background:var(--brand)}}
+  header.pulse{animation:flash .5s ease-out}
   .cam{position:fixed;inset:0;background:#000;z-index:300;display:none;flex-direction:column}
   .cam.open{display:flex}
   .cam video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
@@ -186,6 +220,26 @@
 </head>
 <body>
 
+<div id="splash">
+  <svg class="logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect x="14" y="42" width="72" height="46" fill="#fff"/>
+    <g>
+      <rect x="10" y="24" width="13.3" height="20" fill="#fff"/><rect x="23.3" y="24" width="13.3" height="20" fill="#F4A020"/>
+      <rect x="36.6" y="24" width="13.3" height="20" fill="#fff"/><rect x="49.9" y="24" width="13.3" height="20" fill="#F4A020"/>
+      <rect x="63.2" y="24" width="13.3" height="20" fill="#fff"/><rect x="76.5" y="24" width="13.5" height="20" fill="#F4A020"/>
+      <circle cx="16.6" cy="44" r="6.6" fill="#fff"/><circle cx="29.9" cy="44" r="6.6" fill="#F4A020"/>
+      <circle cx="43.2" cy="44" r="6.6" fill="#fff"/><circle cx="56.5" cy="44" r="6.6" fill="#F4A020"/>
+      <circle cx="69.8" cy="44" r="6.6" fill="#fff"/><circle cx="83.2" cy="44" r="6.6" fill="#F4A020"/>
+    </g>
+    <rect x="42" y="58" width="16" height="30" rx="2.5" fill="#0B5138"/>
+    <rect x="24" y="52" width="12" height="12" rx="2" fill="#0E6E4E"/>
+    <rect x="64" y="52" width="12" height="12" rx="2" fill="#0E6E4E"/>
+  </svg>
+  <div class="appname" id="splashName">Mi Tienda</div>
+  <div class="tag">Caja e inventario</div>
+  <div class="loader"><span>🥤</span><span>🍞</span><span>🥚</span><span>🧀</span></div>
+</div>
+
 <header>
   <div class="store">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5M4 9v11h16V9M9 20v-6h6v6"/></svg>
@@ -205,6 +259,7 @@
             <input id="scan" placeholder="Escanea o escribe (ej. coca)…" autocomplete="off" inputmode="text">
           </div>
           <button class="cambtn" onclick="scanCaja()" aria-label="Escanear con cámara"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          <button class="cambtn" id="linkBtn" onclick="openLink()" aria-label="Vincular escáner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg></button>
         </div>
         <div class="results"><div id="dropdown"></div></div>
         <div class="card cart" id="cart" style="margin-top:12px"></div>
@@ -303,7 +358,7 @@
   <video id="camVideo" playsinline muted autoplay></video>
   <div class="frame"><div class="scanline"></div></div>
   <div class="bar"><span>Escanear código</span><button onclick="closeScanner()">Cerrar ✕</button></div>
-  <div class="hint2">Apunta al código de barras o QR dentro del recuadro</div>
+  <div class="hint2" id="camHint">Apunta al código de barras o QR dentro del recuadro</div>
   <div class="err" id="camErr">
     <svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="#fff" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
     <p id="camErrMsg"></p>
@@ -322,8 +377,31 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const EMOJI={Bebidas:"🥤",Lácteos:"🥛",Snacks:"🍪",Abarrotes:"🍚",Aseo:"🧼",Panadería:"🥖","Frutas y verduras":"🥑",Otros:"📦",Huevos:"🥚",Recargas:"📶"};
 const CATS=["Bebidas","Lácteos","Snacks","Abarrotes","Panadería","Frutas y verduras","Aseo","Recargas","Otros"];
 
-async function sGet(k,def){try{const r=await window.storage.get(k,false);return r?JSON.parse(r.value):def;}catch(e){return def;}}
-async function sSet(k,v){try{const r=await window.storage.set(k,JSON.stringify(v),false);return !!r;}catch(e){console.warn("storage:",e);return false;}}
+/* ---- Base de datos (IndexedDB en el aparato; respaldo automático) ---- */
+function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open("tiendaDB",1);
+  r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains("kv")) r.result.createObjectStore("kv"); };
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);});}
+function idbGet(k){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction("kv","readonly").objectStore("kv").get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error);}));}
+function idbSet(k,v){return idbOpen().then(db=>new Promise((res,rej)=>{const tx=db.transaction("kv","readwrite");tx.objectStore("kv").put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>rej(tx.error);}));}
+
+async function sGet(k,def){
+  try{
+    let raw=null;
+    if(typeof window.storage!=="undefined"&&window.storage){ const r=await window.storage.get(k,false); raw=r?r.value:null; }
+    else if(window.indexedDB){ raw=await idbGet(k); }
+    else { raw=localStorage.getItem(k); }
+    return raw?JSON.parse(raw):def;
+  }catch(e){ try{ const ls=localStorage.getItem(k); return ls?JSON.parse(ls):def; }catch(_){ return def; } }
+}
+async function sSet(k,v){
+  const s=JSON.stringify(v);
+  try{
+    if(typeof window.storage!=="undefined"&&window.storage){ await window.storage.set(k,s,false); }
+    else if(window.indexedDB){ await idbSet(k,s); }
+    else { localStorage.setItem(k,s); }
+    return true;
+  }catch(e){ try{ localStorage.setItem(k,s); return true; }catch(_){ console.warn("db:",e); return false; } }
+}
 
 const SEED=[
  {barcode:"7702004003404",name:"Coca-Cola 500ml",category:"Bebidas",location:"Nevera 1",cost:.45,price:.75,stock:24,minStock:6,quick:true},
@@ -345,9 +423,13 @@ async function boot(){
   S=await sGet("salidas",[]);
   CFG=await sGet("config",{store:"Mi Tienda"});
   $("storeName").value=CFG.store||"";
+  { const sn=$("splashName"); if(sn) sn.textContent=CFG.store||"Mi Tienda"; }
   $("storeName").oninput=e=>{CFG.store=e.target.value;sSet("config",CFG);};
   renderAll();
+  autoLink();
+  setTimeout(hideSplash,1500);
 }
+function hideSplash(){ const s=$("splash"); if(!s)return; s.classList.add("hide"); setTimeout(()=>{ if(s&&s.parentNode) s.parentNode.removeChild(s); },600); }
 function renderAll(){renderQuick();renderCart();renderInv();fillFilters();renderRep();updateHoy();}
 
 /* ================= Estado de stock (semáforo) ================= */
@@ -674,12 +756,13 @@ async function resetDemo(){
 }
 
 /* ================= Escáner de cámara ================= */
-let _camStream=null,_camLoop=null,_camReader=null,_camCb=null;
+let _camStream=null,_camLoop=null,_camReader=null,_camCb=null,_camCont=false,_lastCode="",_lastAt=0;
 
-async function openScanner(cb){
-  _camCb=cb;
+async function openScanner(cb,opts){
+  opts=opts||{}; _camCb=cb; _camCont=!!opts.continuous;
   const el=$("cam"), v=$("camVideo"), err=$("camErr");
   err.classList.remove("on"); el.classList.add("open");
+  $("camHint").textContent=opts.hint||"Apunta al código de barras o QR dentro del recuadro";
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.isSecureContext){
     return camError("La cámara no está disponible aquí. Abre la app en el navegador de tu teléfono por HTTPS (o instalada) para escanear.");
   }
@@ -692,7 +775,7 @@ async function openScanner(cb){
       v.srcObject=_camStream; try{await v.play();}catch(e){}
       const tick=async()=>{
         if(!el.classList.contains("open"))return;
-        try{ const c=await det.detect(v); if(c&&c.length&&c[0].rawValue) return onScan(c[0].rawValue); }catch(e){}
+        try{ const c=await det.detect(v); if(c&&c.length&&c[0].rawValue){ onScan(c[0].rawValue); if(!_camCont)return; } }catch(e){}
         _camLoop=requestAnimationFrame(tick);
       };
       _camLoop=requestAnimationFrame(tick);
@@ -707,7 +790,14 @@ async function openScanner(cb){
       : "No se pudo abrir la cámara. Prueba abriendo la app en tu teléfono por HTTPS.");
   }
 }
-function onScan(code){ beep(); if(navigator.vibrate)navigator.vibrate(70); closeScanner(); if(_camCb) _camCb(String(code).trim()); }
+function onScan(raw){
+  const code=String(raw).trim(); if(!code)return;
+  const now=Date.now();
+  if(_camCont && code===_lastCode && now-_lastAt<1600) return; // evita duplicados seguidos
+  _lastCode=code; _lastAt=now; beep(); if(navigator.vibrate)navigator.vibrate(70);
+  if(_camCont){ if(_camCb)_camCb(code); $("camHint").textContent="✔ Enviado: "+code; }
+  else { closeScanner(); if(_camCb)_camCb(code); }
+}
 function closeScanner(){
   $("cam").classList.remove("open");
   if(_camLoop){cancelAnimationFrame(_camLoop);_camLoop=null;}
@@ -729,11 +819,134 @@ function scanCaja(){ openScanner(code=>{ $("scan").value=code; onEnter(); }); }
 function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; f.dispatchEvent(new Event('input')); } }); }
 function scanCompra(){ openScanner(code=>{ const p=P.find(x=>x.barcode&&x.barcode===code); if(p){ pickCompra(p.id,p.name); } else { $("c_search").value=code; compraSearch(); } }); }
 
+/* ================= Enlace celular ↔ tablet (escáner remoto) ================= */
+const LINK_BROKER="wss://broker.emqx.io:8084/mqtt"; // relay público gratis (puedes cambiarlo por uno privado)
+const LINK_NS="tiendapos";
+let linkClient=null,linkRole=null,linkCode=null,linkReady=false,linkPeer=false;
+
+function genCode(){const c="ABCDEFGHJKMNPQRSTUVWXYZ23456789";let s="";for(let i=0;i<5;i++)s+=c[Math.floor(Math.random()*c.length)];return s;}
+function loadMqtt(){return new Promise((res,rej)=>{ if(window.mqtt)return res();
+  const s=document.createElement("script"); s.src="https://unpkg.com/mqtt/dist/mqtt.min.js";
+  s.onload=()=>res(); s.onerror=()=>rej(new Error("mqtt")); document.head.appendChild(s); });}
+
+function openLink(){
+  if(linkRole) return linkStatusView();
+  openModal(`<h3>Escáner remoto<button class="x" onclick="closeModal()">×</button></h3>
+   <div class="hint">Usa el celular para escanear y que el código aparezca en esta pantalla. ¿Qué es este aparato?</div>
+   <button class="roleBtn" onclick="startTablet()"><span class="em">🖥️</span><div><b>Esta es la CAJA (tablet)</b><span>Recibe los códigos que escanea el celular</span></div></button>
+   <button class="roleBtn" onclick="startPhonePair()"><span class="em">📲</span><div><b>Este es el ESCÁNER (celular)</b><span>Escanea productos y los envía a la caja</span></div></button>`);
+}
+
+async function connect(role){
+  linkRole=role;
+  try{ await loadMqtt(); }catch(e){ return linkErr("No se pudo cargar el enlace (revisa el internet)."); }
+  linkClient=mqtt.connect(LINK_BROKER,{keepalive:30,reconnectPeriod:2000,clean:true});
+  const t=()=>`${LINK_NS}/${linkCode}`;
+  linkClient.on("connect",()=>{
+    if(role==="tablet"){ linkClient.subscribe(t()+"/scan"); linkClient.subscribe(t()+"/hello"); linkClient.publish(t()+"/tablet","1",{retain:true}); }
+    else { linkClient.subscribe(t()+"/tablet"); linkClient.publish(t()+"/hello","1"); }
+    linkReady=true; setLink();
+  });
+  linkClient.on("reconnect",()=>{linkReady=false;setLink();});
+  linkClient.on("close",()=>{linkReady=false;setLink();});
+  linkClient.on("error",()=>{});
+  linkClient.on("message",(topic,msg)=>{
+    const m=msg.toString();
+    if(topic.endsWith("/scan") && role==="tablet"){ handleRemoteScan(m); }
+    if(topic.endsWith("/hello") && role==="tablet"){ linkPeer=true; setLink(); linkClient.publish(t()+"/tablet","1",{retain:true}); }
+    if(topic.endsWith("/tablet") && role==="phone"){ linkPeer=true; setLink(); }
+  });
+  CFG.link={role,code:linkCode}; sSet("config",CFG);
+}
+
+function startTablet(){ linkCode=(CFG.link&&CFG.link.code)||genCode(); connect("tablet"); linkStatusView(); }
+function startPhonePair(){
+  openModal(`<h3>Conectar a la caja<button class="x" onclick="closeModal()">×</button></h3>
+   <div class="hint">Escanea el QR que muestra la tablet, o escribe el código de 5 letras.</div>
+   <button class="save" onclick="scanPairQR()">📷 Escanear QR de la caja</button>
+   <div style="text-align:center;color:var(--muted);margin:12px 0">— o —</div>
+   <div class="field"><label>Código</label><input id="pairCode" maxlength="5" placeholder="EJ. K7M2Q" style="text-transform:uppercase;text-align:center;letter-spacing:4px;font-weight:800"></div>
+   <button class="save" onclick="pairByCode()">Conectar</button>`);
+}
+function pairByCode(){ const c=($("pairCode").value||"").trim().toUpperCase(); if(c.length<4)return toast("Código incompleto"); linkCode=c; connect("phone"); phoneScanView(); }
+function scanPairQR(){ openScanner(v=>{ let c=v; try{ c=new URL(v).searchParams.get("scan")||v; }catch(e){} linkCode=String(c).trim().toUpperCase(); connect("phone"); phoneScanView(); }); }
+
+function pairURL(){ return location.origin+location.pathname+"?scan="+linkCode; }
+function linkStatusView(){
+  if(linkRole==="phone") return phoneScanView();
+  openModal(`<h3>Escáner remoto · Caja<button class="x" onclick="closeModal()">×</button></h3>
+   <div id="lstat"></div>
+   <p style="text-align:center;color:var(--muted);font-size:13px;margin:4px 0 0">Escanea este QR con el celular:</p>
+   <div id="qrbox"></div>
+   <p style="text-align:center;color:var(--muted);font-size:13px;margin:0">o escribe este código en el celular:</p>
+   <div class="paircode">${linkCode}</div>
+   <button class="ghost" onclick="unlink()">Desvincular</button>`);
+  renderQR(pairURL()); setLink();
+}
+function phoneScanView(){
+  openModal(`<h3>Escáner · Celular<button class="x" onclick="closeModal()">×</button></h3>
+   <div id="lstat"></div>
+   <div class="hint">Cuando diga “conectado”, toca el botón y escanea todos los productos seguidos; aparecen en la caja al instante.</div>
+   <button class="save" onclick="startPhoneScan()">📷 Escanear productos</button>
+   <button class="ghost" onclick="unlink()">Desvincular</button>`);
+  setLink();
+}
+function setLink(){
+  if($("linkBtn")) $("linkBtn").classList.toggle("on",linkReady&&linkPeer);
+  const el=$("lstat"); if(!el)return;
+  let cls,txt;
+  if(!linkReady){cls="wait";txt="Conectando al enlace…";}
+  else if(!linkPeer){cls="wait";txt=linkRole==="tablet"?"Esperando el celular…":"Esperando la caja…";}
+  else{cls="ok";txt=linkRole==="tablet"?"Celular conectado ✓":"Conectado a la caja ✓";}
+  el.className="lstat "+cls; el.innerHTML=`<span class="d"></span>${txt}`;
+}
+function linkErr(m){ const el=$("lstat"); if(el){el.className="lstat bad";el.innerHTML=`<span class="d"></span>${m}`;} else toast(m); }
+
+function renderQR(text){
+  const box=$("qrbox"); if(!box)return; box.textContent="Generando…";
+  const done=()=>{ try{ const q=qrcode(0,"M"); q.addData(text); q.make(); box.innerHTML=q.createImgTag(5,8);}catch(e){ box.innerHTML='<span style="color:var(--muted);font-size:13px">Usa el código de abajo 👇</span>'; } };
+  if(window.qrcode) return done();
+  const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js";
+  s.onload=done; s.onerror=()=>{box.innerHTML='<span style="color:var(--muted);font-size:13px">Usa el código de abajo 👇</span>';}; document.head.appendChild(s);
+}
+
+function startPhoneScan(){
+  if(!linkReady) return toast("Aún conectando… espera un momento");
+  openScanner(code=>{ mqttSend(code); }, {continuous:true, hint:"Escanea productos, uno tras otro"});
+}
+function mqttSend(code){ if(linkClient&&linkReady){ linkClient.publish(`${LINK_NS}/${linkCode}/scan`, String(code)); } }
+
+function handleRemoteScan(raw){
+  const code=String(raw).trim(); if(!code)return;
+  linkPeer=true; setLink();
+  const h=document.querySelector("header"); if(h){h.classList.remove("pulse");void h.offsetWidth;h.classList.add("pulse");}
+  beep();
+  const open=$("modal").classList.contains("open");
+  if(open && $("f_bc")){ $("f_bc").value=code; toast("Código recibido"); return; }
+  if(open && $("r_bc")){ $("r_bc").value=code; toast("Código recibido"); return; }
+  if(open && $("c_search")){ const p=P.find(x=>x.barcode&&x.barcode===code); if(p)pickCompra(p.id,p.name); else {$("c_search").value=code;compraSearch();} toast("Código recibido"); return; }
+  if(open) closeModal();
+  nav("caja"); $("scan").value=code; onEnter();
+}
+
+async function unlink(){
+  if(linkClient){ try{ linkClient.end(true); }catch(e){} linkClient=null; }
+  linkRole=linkCode=null; linkReady=linkPeer=false; CFG.link=null; await sSet("config",CFG);
+  if($("linkBtn"))$("linkBtn").classList.remove("on"); closeModal(); toast("Escáner desvinculado");
+}
+function autoLink(){
+  const p=new URLSearchParams(location.search).get("scan");
+  if(p){ linkCode=p.trim().toUpperCase(); connect("phone"); setTimeout(phoneScanView,500); return; }
+  if(CFG.link&&CFG.link.code){ linkCode=CFG.link.code; connect(CFG.link.role); }
+}
+
 /* ================= Toast ================= */
 let tt;
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1600); }
 
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
 boot();
+setTimeout(hideSplash,4000); // por si algo tarda, nunca se queda pegado
 </script>
 </body>
 </html>

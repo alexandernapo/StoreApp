@@ -460,30 +460,41 @@ function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open("tienda
 function idbGet(k){return idbOpen().then(db=>new Promise((res,rej)=>{const t=db.transaction("kv","readonly").objectStore("kv").get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error);}));}
 function idbSet(k,v){return idbOpen().then(db=>new Promise((res,rej)=>{const tx=db.transaction("kv","readwrite");tx.objectStore("kv").put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>rej(tx.error);}));}
 
-async function localGet(k,def){
+/* Local con marca de tiempo — formato {__v, __t}; compatible con datos viejos */
+async function lget(k){
   try{
     let raw=null;
-    if(typeof window.storage!=="undefined"&&window.storage){ const r=await window.storage.get(k,false); raw=r?r.value:null; }
-    else if(window.indexedDB){ raw=await idbGet(k); }
-    else { raw=localStorage.getItem(k); }
-    return raw?JSON.parse(raw):def;
-  }catch(e){ try{ const ls=localStorage.getItem(k); return ls?JSON.parse(ls):def; }catch(_){ return def; } }
+    if(window.indexedDB) raw=await idbGet(k); else raw=localStorage.getItem(k);
+    if(raw==null) return null;
+    const o=JSON.parse(raw);
+    if(o && typeof o==='object' && '__v' in o) return {value:o.__v, ts:o.__t||0};
+    return {value:o, ts:0}; // dato viejo sin marca
+  }catch(e){ return null; }
 }
-async function sGet(k,def){
-  if(sbOn && SB){
-    try{ const {data,error}=await SB.from('kv').select('value').eq('key',k).maybeSingle();
-      if(!error){ if(data){ try{await idbSet(k,JSON.stringify(data.value));}catch(e){} return data.value; } return def; } }catch(e){}
-  }
-  return localGet(k,def);
+async function lset(k,value,ts){
+  const raw=JSON.stringify({__v:value,__t:ts});
+  try{ if(window.indexedDB) await idbSet(k,raw); else localStorage.setItem(k,raw); }
+  catch(e){ try{ localStorage.setItem(k,raw); }catch(_){ } }
 }
+/* Nube (Supabase): {value,ts} | null (vacío) | undefined (sin conexión/error) */
+async function cget(k){
+  if(!(sbOn&&SB)) return undefined;
+  try{ const {data,error}=await SB.from('kv').select('value,updated_at').eq('key',k).maybeSingle();
+    if(error) return undefined;
+    if(!data) return null;
+    return {value:data.value, ts:data.updated_at?Date.parse(data.updated_at):0};
+  }catch(e){ return undefined; }
+}
+async function cset(k,value,ts){
+  if(!(sbOn&&SB)) return false;
+  try{ const {error}=await SB.from('kv').upsert({key:k,value:value,updated_at:new Date(ts).toISOString()}); return !error; }
+  catch(e){ return false; }
+}
+/* Guardar: escribe local y nube con la MISMA marca de tiempo */
 async function sSet(k,v){
-  const s=JSON.stringify(v);
-  try{
-    if(typeof window.storage!=="undefined"&&window.storage){ await window.storage.set(k,s,false); }
-    else if(window.indexedDB){ await idbSet(k,s); }
-    else { localStorage.setItem(k,s); }
-  }catch(e){ try{ localStorage.setItem(k,s); }catch(_){ console.warn("db:",e); } }
-  if(sbOn && SB){ try{ await SB.from('kv').upsert({key:k,value:v,updated_at:new Date().toISOString()}); }catch(e){ console.warn("cloud:",e); } }
+  const ts=Date.now();
+  await lset(k,v,ts);
+  if(sbOn&&SB) await cset(k,v,ts);
   return true;
 }
 
@@ -500,13 +511,26 @@ const SEED=[
  {barcode:"",name:"Recarga $1",category:"Recargas",location:"Caja",cost:.95,price:1.00,stock:999,minStock:0,quick:true},
 ].map(x=>({id:uid(),...x}));
 
+function bigger(a,b){ const la=Array.isArray(a)?a.length:-1, lb=Array.isArray(b)?b.length:-1; if(la>=0||lb>=0) return la>=lb?a:b; return b; }
 async function load(k,seed){
-  let v=await sGet(k,null);
-  if(v!=null) return v;               // la nube (o local) ya lo tenía
-  if(sbOn) v=await localGet(k,null);  // nube vacía → rescata lo local
-  if(v==null) v=seed;                 // nada → semilla/predeterminado
-  await sSet(k,v);                    // guarda (local + nube si está activa)
-  return v;
+  const loc=await lget(k);        // {value,ts} | null
+  const cl =await cget(k);        // {value,ts} | null | undefined(sin nube)
+  if(cl===undefined){             // sin nube: usa local, o siembra local
+    if(loc) return loc.value;
+    const ts=Date.now(); await lset(k,seed,ts); return seed;
+  }
+  if(loc && cl){
+    if(loc.ts===0 && cl.ts>0){    // local viejo sin marca: no arriesgar, conserva lo más completo
+      const w=bigger(loc.value,cl.value), ts=Date.now();
+      await lset(k,w,ts); await cset(k,w,ts); return w;
+    }
+    if(cl.ts>loc.ts){ await lset(k,cl.value,cl.ts); return cl.value; }
+    if(loc.ts>cl.ts){ await cset(k,loc.value,loc.ts); return loc.value; }
+    return cl.value;              // iguales
+  }
+  if(cl && !loc){ await lset(k,cl.value,cl.ts); return cl.value; }
+  if(loc && !cl){ await cset(k,loc.value,loc.ts); return loc.value; } // nube vacía → subir local
+  const ts=Date.now(); await lset(k,seed,ts); await cset(k,seed,ts); return seed; // nada → semilla
 }
 async function boot(){
   await initCloudFromSaved();
@@ -671,7 +695,7 @@ function catOptions(sel){return CATS.map(c=>`<option ${c===sel?"selected":""}>${
 function openProd(id=null,prefill=""){
   const p=id?P.find(x=>x.id===id):null;
   openModal(`<h3>${p?"Editar producto":"Nuevo producto"}<button class="x" onclick="closeModal()">×</button></h3>
-   <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="f_bc" style="flex:1" value="${p?p.barcode:(/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Opcional"><button type="button" class="cambtn f" onclick="scanField('f_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
+   <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="f_bc" style="flex:1" value="${p?p.barcode:(/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Opcional"><button type="button" class="cambtn f" onclick="autoLookup('f_bc','f_nm','f_cat')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('f_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
    <div class="field"><label>Nombre</label><input id="f_nm" value="${p?p.name:(!/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Ej. Coca-Cola 500ml"></div>
    <div class="two">
      <div class="field"><label>Categoría</label><select id="f_cat">${catOptions(p?p.category:"Otros")}</select></div>
@@ -739,7 +763,7 @@ function openRapido(){
   openModal(`<h3>Inventario rápido<button class="x" onclick="closeModal()">×</button></h3>
    <div class="hint">Levanta tu stock por secciones. Escanea → nombre → categoría → cantidad → precio. Puedes salir y continuar cuando quieras.</div>
    <div class="field"><label>Sección que estás levantando</label><input id="r_sec" value="${sec}" placeholder="Ej. Refrigeradores"></div>
-   <div class="field"><label>Código (opcional)</label><div style="display:flex;gap:8px"><input id="r_bc" style="flex:1" placeholder="Escanea aquí" autocomplete="off"><button type="button" class="cambtn f" onclick="scanField('r_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
+   <div class="field"><label>Código (opcional)</label><div style="display:flex;gap:8px"><input id="r_bc" style="flex:1" placeholder="Escanea aquí" autocomplete="off"><button type="button" class="cambtn f" onclick="autoLookup('r_bc','r_nm','r_cat')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('r_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
    <div class="field"><label>Nombre</label><input id="r_nm" placeholder="Nombre del producto"></div>
    <div class="two">
      <div class="field"><label>Categoría</label><select id="r_cat">${catOptions("Otros")}</select></div>
@@ -918,10 +942,14 @@ async function initCloudFromSaved(){
 }
 function subscribeCloud(){
   try{ SB.channel('kv-'+Math.random().toString(36).slice(2))
-    .on('postgres_changes',{event:'*',schema:'public',table:'kv'},p=>{ if(p.new&&p.new.key) applyCloudChange(p.new.key,p.new.value); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'kv'},p=>{ if(p.new&&p.new.key) applyCloudChange(p.new.key,p.new.value,p.new.updated_at); })
     .subscribe(); }catch(e){}
 }
-function applyCloudChange(k,val){
+async function applyCloudChange(k,val,updated_at){
+  const ts=updated_at?Date.parse(updated_at):Date.now();
+  const loc=await lget(k);
+  if(loc && loc.ts>ts) return;      // lo local es más nuevo: no pisar
+  await lset(k,val,ts);
   if(k==='productos') P=val||[];
   else if(k==='ventas') V=val||[];
   else if(k==='salidas') S=val||[];
@@ -937,25 +965,31 @@ async function connectCloud(){
     await loadSB(); SB=window.supabase.createClient(url,key);
     const {error}=await SB.from('kv').select('key').limit(1); if(error) throw error;
     sbOn=true; localStorage.setItem('sbcfg',JSON.stringify({url,key}));
-    // Subir/traer datos: la nube manda si ya tiene; si está vacía, sube lo local
-    for(const [k,localVal] of [['productos',P],['ventas',V],['salidas',S],['config',CFG]]){
-      const {data}=await SB.from('kv').select('value').eq('key',k).maybeSingle();
-      if(data){ if(k==='productos')P=data.value; else if(k==='ventas')V=data.value; else if(k==='salidas')S=data.value; else CFG=data.value; }
-      else { await SB.from('kv').upsert({key:k,value:localVal,updated_at:new Date().toISOString()}); }
-    }
-    subscribeCloud(); applyTheme(CFG.theme||'verde');
+    subscribeCloud();
+    // Fusiona local con nube (gana el más reciente) para todas las claves
+    P=await load('productos',SEED); V=await load('ventas',[]); S=await load('salidas',[]); CFG=await load('config',{store:'Mi Tienda'});
+    applyTheme(CFG.theme||'verde');
     closeModal(); renderAll(); toast("Conectado a la nube ✓");
   }catch(e){ toast("No se pudo conectar. Revisa los datos y el SQL."); }
 }
 function disconnectCloud(){ try{localStorage.removeItem('sbcfg');}catch(e){} sbOn=false; SB=null; closeModal(); renderRep(); toast("Desconectado (datos locales)"); }
+async function pushForce(){
+  if(!(sbOn&&SB)) return toast("Conéctate primero");
+  if(!confirm("Esto hará que el inventario, ventas y ajustes de ESTE aparato reemplacen lo que hay en la nube. ¿Continuar?")) return;
+  const ts=Date.now();
+  await cset('productos',P,ts); await cset('ventas',V,ts); await cset('salidas',S,ts); await cset('config',CFG,ts);
+  await lset('productos',P,ts); await lset('ventas',V,ts); await lset('salidas',S,ts); await lset('config',CFG,ts);
+  closeModal(); toast("Datos de este aparato subidos a la nube ✓");
+}
 function openCloud(){
   const s=sbSaved()||{};
   openModal(`<h3>☁️ Base de datos en la nube<button class="x" onclick="closeModal()">×</button></h3>
    <div class="lstat ${sbOn?'ok':'wait'}"><span class="d"></span>${sbOn?'Conectado a la nube ✓':'No conectado · datos solo en este aparato'}</div>
-   <div class="hint">1) Crea un proyecto gratis en <b>supabase.com</b>.<br>2) En <b>SQL Editor</b> pega y ejecuta el código que te pasé.<br>3) En <b>Project Settings → API</b> copia el <b>Project URL</b> y la <b>anon public key</b> y pégalos aquí. Se guardan solo en este aparato.</div>
+   <div class="hint">La app ya viene conectada a tu nube. Si necesitas cambiarla: pega el <b>Project URL</b> y la <b>key</b>. Se guardan solo en este aparato.</div>
    <div class="field"><label>Project URL</label><input id="sbUrl" placeholder="https://xxxxx.supabase.co" value="${s.url||''}"></div>
-   <div class="field"><label>anon public key</label><input id="sbKey" placeholder="eyJhbGciOi..." value="${s.key||''}"></div>
+   <div class="field"><label>anon / publishable key</label><input id="sbKey" placeholder="sb_publishable_… o eyJhbGciOi…" value="${s.key||''}"></div>
    <button class="save" onclick="connectCloud()">${sbOn?'Reconectar':'Conectar'}</button>
+   ${sbOn?'<button class="ghost" onclick="pushForce()">⬆️ Subir lo de este aparato a la nube</button>':''}
    ${sbOn?'<button class="ghost" onclick="disconnectCloud()">Desconectar (volver a local)</button>':''}`);
 }
 
@@ -1095,7 +1129,45 @@ function beep(){try{const a=new(window.AudioContext||window.webkitAudioContext)(
 
 /* Enganches por pantalla */
 function scanCaja(){ openScanner(code=>{ $("scan").value=code; onEnter(); },{continuous:true,hint:"Escanea productos, uno tras otro"}); }
-function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; f.dispatchEvent(new Event('input')); } }); }
+function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; f.dispatchEvent(new Event('input')); }
+  if(id==='f_bc') autoLookup('f_bc','f_nm','f_cat');
+  else if(id==='r_bc') autoLookup('r_bc','r_nm','r_cat');
+}); }
+async function lookupBarcode(code){
+  const hosts=['https://world.openfoodfacts.org','https://world.openproductsfacts.org'];
+  for(const h of hosts){
+    try{
+      const r=await fetch(`${h}/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_es,brands,quantity,categories`);
+      const j=await r.json();
+      if(j&&j.status===1&&j.product){ const p=j.product;
+        const nm=[(p.product_name_es||p.product_name||p.brands||'').trim(),(p.quantity||'').trim()].filter(Boolean).join(' ').trim();
+        if(nm) return {name:nm, category:guessCat((p.categories||'')+' '+(p.product_name||''))};
+      }
+    }catch(e){}
+  }
+  return null;
+}
+function guessCat(txt){
+  txt=(txt||'').toLowerCase();
+  const map=[
+    ['Bebidas',['bebida','drink','gaseosa','soda','agua','water','jugo','juice','cola','cerveza','beer','vino','wine','café','coffee','tea','energiz']],
+    ['Lácteos',['leche','milk','yogur','yoghurt','queso','cheese','dairy','lácteo','mantequilla','butter','crema']],
+    ['Snacks',['snack','galleta','cookie','biscuit','chip','papas','chocolate','candy','dulce','caramelo','chicle','wafer','maní']],
+    ['Panadería',['bread','bakery','bollo','pastel','tortilla']],
+    ['Frutas y verduras',['fruit','fruta','vegetable','verdura','legumbre','hortaliza']],
+    ['Aseo',['soap','jabón','detergente','cleaner','limpieza','shampoo','champú','higién','papel','dental','dentíf','desinfect']],
+    ['Abarrotes',['arroz','rice','pasta','fideo','aceite','oil','azúcar','sugar','harina','flour','conserva','enlatad','atún','tuna','sardina','frijol','lenteja','grano']]
+  ];
+  for(const [cat,kws] of map){ if(kws.some(k=>txt.includes(k))) return cat; }
+  return 'Otros';
+}
+async function autoLookup(codeId,nameId,catId){
+  const code=(($(codeId)&&$(codeId).value)||'').trim(); if(!code) return toast("Escribe o escanea el código primero");
+  toast("Buscando datos…");
+  const d=await lookupBarcode(code);
+  if(d&&d.name){ if($(nameId)&&!$(nameId).value) $(nameId).value=d.name; if(catId&&$(catId)&&d.category) $(catId).value=d.category; toast("Producto encontrado ✓"); }
+  else toast("No está en el banco de datos; escribe el nombre.");
+}
 function scanCompra(){ openScanner(code=>{ const p=P.find(x=>x.barcode&&x.barcode===code); if(p){ pickCompra(p.id,p.name); } else { $("c_search").value=code; compraSearch(); } }); }
 
 /* ================= Enlace celular ↔ tablet (escáner remoto) ================= */

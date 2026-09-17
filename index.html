@@ -229,7 +229,7 @@
   .hrow .ic{width:20px;text-align:center;font-size:15px;flex:none}
   .hrow .hl2{width:32%;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .hrow .track{flex:1;background:var(--surface);border-radius:8px;height:16px;overflow:hidden}
-  .hrow .fill{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--ok));border-radius:8px;min-width:4px}
+  .hrow .fill{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--accent));border-radius:8px;min-width:4px}
   .hrow .v{font-size:12px;font-weight:700;min-width:50px;text-align:right;flex:none}
   .emptyc{padding:22px;text-align:center;color:var(--muted);font-size:13px;line-height:1.5}
   .acc .m{border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--card)}
@@ -880,16 +880,17 @@ function recomputeCierre(){
 function setBase(){ CFG.base=+$("baseCaja").value||0; sSet("config",CFG); recomputeCierre(); }
 
 const THEMES={
-  verde :{n:'Verde', brand:'#0E6E4E',dark:'#0A5138',okbg:'#E7F4EE'},
-  teal  :{n:'Teal',  brand:'#0E7C86',dark:'#0A5A61',okbg:'#E3F3F5'},
-  azul  :{n:'Azul',  brand:'#1663B6',dark:'#10488A',okbg:'#E6EFFA'},
-  indigo:{n:'Índigo',brand:'#4F46B8',dark:'#372F8A',okbg:'#ECEBFB'},
-  vino  :{n:'Vino',  brand:'#A62B4D',dark:'#7C1F39',okbg:'#FBE9EE'},
-  oscuro:{n:'Oscuro',brand:'#19A56E',dark:'#0E6E4E',okbg:'#12362A',surface:'#0F1512',card:'#18201C',ink:'#E9F0EC',muted:'#9DB0A8',line:'#273029'}
+  verde :{n:'Verde+Ámbar', brand:'#0E6E4E',dark:'#0A5138',accent:'#F4A020',okbg:'#E7F4EE'},
+  teal  :{n:'Teal+Coral',  brand:'#0E7C86',dark:'#0A5A61',accent:'#F2673E',okbg:'#E3F3F5'},
+  azul  :{n:'Azul+Naranja',brand:'#1663B6',dark:'#10488A',accent:'#F79A2B',okbg:'#E6EFFA'},
+  indigo:{n:'Índigo+Rosa', brand:'#5B47C4',dark:'#3E2E96',accent:'#EC6AA6',okbg:'#ECEBFB'},
+  vino  :{n:'Vino+Dorado', brand:'#A62B4D',dark:'#7C1F39',accent:'#E0A63C',okbg:'#FBE9EE'},
+  oscuro:{n:'Oscuro+Verde',brand:'#16A36B',dark:'#0E6E4E',accent:'#F4A020',okbg:'#12362A',surface:'#0F1512',card:'#18201C',ink:'#E9F0EC',muted:'#9DB0A8',line:'#273029'}
 };
 function applyTheme(name){
   const t=THEMES[name]||THEMES.verde, r=document.documentElement.style;
   r.setProperty('--brand',t.brand); r.setProperty('--brand-dark',t.dark); r.setProperty('--okbg',t.okbg);
+  r.setProperty('--accent',t.accent||'#F4A020');
   r.setProperty('--surface',t.surface||'#F7F6F3'); r.setProperty('--card',t.card||'#FFFFFF');
   r.setProperty('--ink',t.ink||'#14211B'); r.setProperty('--muted',t.muted||'#5C6B63'); r.setProperty('--line',t.line||'#E4E7E2');
   const meta=document.querySelector('meta[name=theme-color]'); if(meta)meta.setAttribute('content',t.brand);
@@ -898,7 +899,8 @@ function applyTheme(name){
 function setTheme(name){ applyTheme(name); sSet('config',CFG); renderThemePicker(); }
 function renderThemePicker(){
   const cur=CFG.theme||'verde', el=$("themeRow"); if(!el)return;
-  el.innerHTML=Object.keys(THEMES).map(k=>`<button class="sw ${k===cur?'on':''}" onclick="setTheme('${k}')" style="background:${THEMES[k].brand}" title="${THEMES[k].n}">${k===cur?'✓':''}</button>`).join('');
+  el.innerHTML=Object.keys(THEMES).map(k=>{const t=THEMES[k];
+    return `<button class="sw ${k===cur?'on':''}" onclick="setTheme('${k}')" style="background:linear-gradient(135deg,${t.brand} 55%,${t.accent} 55%)" title="${t.n}">${k===cur?'✓':''}</button>`;}).join('');
 }
 
 /* ================= Nube (Supabase) ================= */
@@ -1020,7 +1022,7 @@ async function resetDemo(){
 }
 
 /* ================= Escáner de cámara ================= */
-let _camStream=null,_camLoop=null,_camReader=null,_camCb=null,_camCont=false,_lastCode="",_lastAt=0;
+let _camStream=null,_camLoop=null,_camReader=null,_camCb=null,_camCont=false,_lastCode="",_lastAt=0,_lastAny=0;
 
 async function openScanner(cb,opts){
   opts=opts||{}; _camCb=cb; _camCont=!!opts.continuous;
@@ -1067,9 +1069,12 @@ async function openScanner(cb,opts){
 function onScan(raw){
   const code=String(raw).trim(); if(!code)return;
   const now=Date.now();
-  if(_camCont && code===_lastCode && now-_lastAt<1600) return; // evita duplicados seguidos
-  _lastCode=code; _lastAt=now; beep(); if(navigator.vibrate)navigator.vibrate(70);
-  if(_camCont){ if(_camCb)_camCb(code); $("camHint").textContent="✔ Enviado: "+code; }
+  if(_camCont){
+    if(now-_lastAny<1100) return;                    // espacio antes de aceptar la siguiente
+    if(code===_lastCode && now-_lastAt<3500) return; // no leer dos veces el mismo código
+  }
+  _lastAny=now; _lastCode=code; _lastAt=now; beep(); if(navigator.vibrate)navigator.vibrate(70);
+  if(_camCont){ if(_camCb)_camCb(code); $("camHint").textContent="✔ "+code+" · listo para el siguiente"; }
   else { closeScanner(); if(_camCb)_camCb(code); }
 }
 function closeScanner(){
@@ -1089,7 +1094,7 @@ function beep(){try{const a=new(window.AudioContext||window.webkitAudioContext)(
   g.gain.setValueAtTime(.18,a.currentTime);g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+.15);o.stop(a.currentTime+.16);}catch(e){}}
 
 /* Enganches por pantalla */
-function scanCaja(){ openScanner(code=>{ $("scan").value=code; onEnter(); }); }
+function scanCaja(){ openScanner(code=>{ $("scan").value=code; onEnter(); },{continuous:true,hint:"Escanea productos, uno tras otro"}); }
 function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; f.dispatchEvent(new Event('input')); } }); }
 function scanCompra(){ openScanner(code=>{ const p=P.find(x=>x.barcode&&x.barcode===code); if(p){ pickCompra(p.id,p.name); } else { $("c_search").value=code; compraSearch(); } }); }
 

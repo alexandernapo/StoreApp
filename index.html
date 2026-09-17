@@ -724,7 +724,7 @@ async function saveProd(id){
   if(!o.name){toast("Ponle un nombre al producto");return;}
   if(o.barcode){ const dup=P.find(x=>x.barcode&&x.barcode===o.barcode&&x.id!==id); if(dup){ toast("Ese código ya está registrado en: "+dup.name); return; } }
   if(id){ Object.assign(P.find(x=>x.id===id),o); } else { P.push({id:uid(),...o}); }
-  await sSet("productos",P); closeModal(); renderAll(); toast("Producto guardado");
+  await sSet("productos",P); if(o.barcode) cbPut(o.barcode,o.name,o.category); closeModal(); renderAll(); toast("Producto guardado");
 }
 async function delProd(id){ P=P.filter(x=>x.id!==id); await sSet("productos",P); closeModal(); renderAll(); toast("Producto eliminado"); }
 
@@ -992,6 +992,7 @@ function openCloud(){
    <div class="field"><label>Project URL</label><input id="sbUrl" placeholder="https://xxxxx.supabase.co" value="${s.url||''}"></div>
    <div class="field"><label>anon / publishable key</label><input id="sbKey" placeholder="sb_publishable_… o eyJhbGciOi…" value="${s.key||''}"></div>
    <button class="save" onclick="connectCloud()">${sbOn?'Reconectar':'Conectar'}</button>
+   ${sbOn?'<button class="ghost" onclick="contribAll()">📚 Aportar mi inventario al catálogo</button>':''}
    ${sbOn?'<button class="ghost" onclick="pushForce()">⬆️ Subir lo de este aparato a la nube</button>':''}
    ${sbOn?'<button class="ghost" onclick="disconnectCloud()">Desconectar (volver a local)</button>':''}`);
 }
@@ -1144,6 +1145,22 @@ function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; 
   if(id==='f_bc'){ if(!existsBarcode(code)) autoLookup('f_bc','f_nm','f_cat'); }
   else if(id==='r_bc'){ if(!existsBarcode(code)) autoLookup('r_bc','r_nm','r_cat'); }
 }); }
+async function cbGet(code){
+  if(!(sbOn&&SB)) return null;
+  try{ const {data,error}=await SB.from('catalogo').select('name,category').eq('barcode',code).maybeSingle();
+    if(error||!data) return null; return {name:data.name, category:data.category}; }catch(e){ return null; }
+}
+async function cbPut(code,name,category){
+  if(!(sbOn&&SB)||!code||!name) return;
+  try{ await SB.from('catalogo').upsert({barcode:code,name:name,category:category||'Otros',updated_at:new Date().toISOString()}); }catch(e){}
+}
+async function contribAll(){
+  if(!(sbOn&&SB)) return toast("Conéctate primero");
+  const items=P.filter(p=>p.barcode); if(!items.length) return toast("No hay productos con código");
+  toast("Aportando al catálogo…");
+  for(const p of items){ await cbPut(p.barcode,p.name,p.category); }
+  closeModal(); toast("Catálogo actualizado ✓ ("+items.length+")");
+}
 async function lookupBarcode(code){
   const hosts=['https://world.openfoodfacts.org','https://world.openproductsfacts.org'];
   for(const h of hosts){
@@ -1176,9 +1193,10 @@ async function autoLookup(codeId,nameId,catId){
   const code=(($(codeId)&&$(codeId).value)||'').trim(); if(!code) return toast("Escribe o escanea el código primero");
   if(existsBarcode(code)) return;
   toast("Buscando datos…");
-  const d=await lookupBarcode(code);
+  let d=await cbGet(code);              // 1) tu catálogo compartido
+  if(!d||!d.name) d=await lookupBarcode(code); // 2) banco mundial (respaldo)
   if(d&&d.name){ if($(nameId)&&!$(nameId).value) $(nameId).value=d.name; if(catId&&$(catId)&&d.category) $(catId).value=d.category; toast("Producto encontrado ✓"); }
-  else toast("No está en el banco de datos; escribe el nombre.");
+  else toast("No está en el catálogo; escribe el nombre y quedará guardado para la próxima.");
 }
 function scanCompra(){ openScanner(code=>{ const p=P.find(x=>x.barcode&&x.barcode===code); if(p){ pickCompra(p.id,p.name); } else { $("c_search").value=code; compraSearch(); } }); }
 

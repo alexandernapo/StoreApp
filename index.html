@@ -444,6 +444,7 @@
 let P=[], V=[], S=[], CFG={store:"Mi Tienda"};
 let cart=[], pago="efectivo";
 let SB=null, sbOn=false;
+let _editingId=null;
 const SB_URL="https://inldqynhwmmkglqeplje.supabase.co";
 const SB_KEY="sb_publishable_4JXQBAHlF-kzM_2u6P9WRw_gxspo9nq";
 const $=id=>document.getElementById(id);
@@ -693,6 +694,7 @@ $("modal").addEventListener("click",e=>{ if(e.target.id==="modal") closeModal();
 function catOptions(sel){return CATS.map(c=>`<option ${c===sel?"selected":""}>${c}</option>`).join("");}
 
 function openProd(id=null,prefill=""){
+  _editingId=id||null;
   const p=id?P.find(x=>x.id===id):null;
   openModal(`<h3>${p?"Editar producto":"Nuevo producto"}<button class="x" onclick="closeModal()">×</button></h3>
    <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="f_bc" style="flex:1" value="${p?p.barcode:(/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Opcional"><button type="button" class="cambtn f" onclick="autoLookup('f_bc','f_nm','f_cat')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('f_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
@@ -720,6 +722,7 @@ async function saveProd(id){
     cost:+$("f_cost").value||0, price:+$("f_price").value||0,
     stock:+$("f_stock").value||0, minStock:+$("f_min").value||0, quick:$("f_quick").checked };
   if(!o.name){toast("Ponle un nombre al producto");return;}
+  if(o.barcode){ const dup=P.find(x=>x.barcode&&x.barcode===o.barcode&&x.id!==id); if(dup){ toast("Ese código ya está registrado en: "+dup.name); return; } }
   if(id){ Object.assign(P.find(x=>x.id===id),o); } else { P.push({id:uid(),...o}); }
   await sSet("productos",P); closeModal(); renderAll(); toast("Producto guardado");
 }
@@ -1129,9 +1132,17 @@ function beep(){try{const a=new(window.AudioContext||window.webkitAudioContext)(
 
 /* Enganches por pantalla */
 function scanCaja(){ openScanner(code=>{ $("scan").value=code; onEnter(); },{continuous:true,hint:"Escanea productos, uno tras otro"}); }
+function existsBarcode(code){
+  code=String(code||'').trim(); if(!code) return false;
+  const ex=P.find(p=>p.barcode&&p.barcode===code&&p.id!==_editingId);
+  if(!ex) return false;
+  toast("Ya está registrado: "+ex.name);
+  openProd(ex.id);   // abre el existente para editar (evita duplicar)
+  return true;
+}
 function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; f.dispatchEvent(new Event('input')); }
-  if(id==='f_bc') autoLookup('f_bc','f_nm','f_cat');
-  else if(id==='r_bc') autoLookup('r_bc','r_nm','r_cat');
+  if(id==='f_bc'){ if(!existsBarcode(code)) autoLookup('f_bc','f_nm','f_cat'); }
+  else if(id==='r_bc'){ if(!existsBarcode(code)) autoLookup('r_bc','r_nm','r_cat'); }
 }); }
 async function lookupBarcode(code){
   const hosts=['https://world.openfoodfacts.org','https://world.openproductsfacts.org'];
@@ -1163,6 +1174,7 @@ function guessCat(txt){
 }
 async function autoLookup(codeId,nameId,catId){
   const code=(($(codeId)&&$(codeId).value)||'').trim(); if(!code) return toast("Escribe o escanea el código primero");
+  if(existsBarcode(code)) return;
   toast("Buscando datos…");
   const d=await lookupBarcode(code);
   if(d&&d.name){ if($(nameId)&&!$(nameId).value) $(nameId).value=d.name; if(catId&&$(catId)&&d.category) $(catId).value=d.category; toast("Producto encontrado ✓"); }

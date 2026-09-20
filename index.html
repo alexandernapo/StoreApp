@@ -257,6 +257,19 @@
   .cam .err.on{display:flex}
   .cam .err p{margin:0;line-height:1.5;font-size:15px;color:#ddd}
   .cam .err button{background:var(--accent);color:#3a2600;padding:13px 24px;border-radius:12px;font-weight:800}
+  #camCart{position:absolute;left:0;right:0;bottom:0;z-index:3;background:rgba(20,33,27,.93);backdrop-filter:blur(4px);
+    border-radius:16px 16px 0 0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));max-height:46%;display:none;flex-direction:column;color:#fff}
+  #camCart.on{display:flex}
+  #camCartList{overflow-y:auto;flex:1;margin-bottom:8px;min-height:44px}
+  #camCart .cl{display:flex;justify-content:space-between;gap:8px;padding:7px 4px;border-bottom:1px solid rgba(255,255,255,.12);font-size:14px}
+  #camCart .cl small{color:rgba(255,255,255,.65)}
+  #camCart .empty{color:rgba(255,255,255,.6);text-align:center;padding:14px;font-size:13px}
+  #camCart .camCartFoot{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  #camCart .camCartFoot>div{font-size:12px;color:rgba(255,255,255,.75)}
+  #camCart .camCartFoot b{font-size:22px;color:#fff;display:block;line-height:1.1}
+  #camCart .camCartFoot button{background:var(--grad);color:#fff;font-weight:800;padding:14px 22px;border-radius:12px;font-size:16px;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .cam.cartmode .frame{top:27%;width:60%;max-width:220px}
+  .cam.cartmode #camHint{bottom:49%}
   .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);background:#1E2A24;color:#fff;
     padding:12px 20px;border-radius:999px;font-weight:700;opacity:0;transition:.25s;z-index:600;pointer-events:none;font-size:14px}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -442,6 +455,13 @@
     <p id="camErrMsg"></p>
     <button onclick="closeScanner()">Entendido</button>
   </div>
+  <div id="camCart">
+    <div id="camCartList"></div>
+    <div class="camCartFoot">
+      <div>Total<b id="camCartTotal">$0.00</b></div>
+      <button onclick="finishCajaScan()">Cobrar →</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -552,6 +572,7 @@ async function boot(){
   renderAll();
   autoLink();
   setTimeout(hideSplash,1500);
+  if(new URLSearchParams(location.search).get('camara')){ nav('caja'); setTimeout(()=>scanCaja(), 1650); }
 }
 function hideSplash(){ const s=$("splash"); if(!s)return; s.classList.add("hide"); setTimeout(()=>{ if(s&&s.parentNode) s.parentNode.removeChild(s); },600); }
 function renderAll(){renderQuick();renderCart();renderInv();fillFilters();renderRep();updateHoy();}
@@ -1081,6 +1102,9 @@ async function openScanner(cb,opts){
   const qrMode=opts.mode==='qr';
   const el=$("cam"), v=$("camVideo"), err=$("camErr");
   err.classList.remove("on"); el.classList.add("open");
+  el.classList.toggle("cartmode", !!opts.cart);
+  $("camCart").classList.toggle("on", !!opts.cart);
+  if(opts.cart) renderCamCart();
   $("camHint").textContent=opts.hint||(qrMode?"Apunta al QR de la caja":"Apunta solo al código de barras");
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||!window.isSecureContext){
     return camError("La cámara no está disponible aquí. Abre la app en el navegador de tu teléfono por HTTPS (o instalada) para escanear.");
@@ -1136,12 +1160,21 @@ function camFlash(msg, ok){
   f.style.opacity='1'; setTimeout(()=>{ f.style.opacity='0'; }, 170);
 }
 function closeScanner(){
-  $("cam").classList.remove("open");
+  const el=$("cam"); el.classList.remove("open"); el.classList.remove("cartmode");
+  $("camCart").classList.remove("on");
   if(_camLoop){cancelAnimationFrame(_camLoop);_camLoop=null;}
   if(_camReader){try{_camReader.reset();}catch(e){}_camReader=null;}
   if(_camStream){_camStream.getTracks().forEach(t=>t.stop());_camStream=null;}
   $("camVideo").srcObject=null;
 }
+function renderCamCart(){
+  const box=$("camCartList"); if(!box) return;
+  if(!cart.length){ box.innerHTML='<div class="empty">Escanea productos… aparecerán aquí</div>'; }
+  else box.innerHTML=cart.map(l=>`<div class="cl"><span>${l.name} <small>x${l.qty}</small></span><span class="num">${money(l.price*l.qty)}</span></div>`).join('');
+  const t=cart.reduce((s,l)=>s+l.price*l.qty,0);
+  if($("camCartTotal")) $("camCartTotal").textContent=money(t);
+}
+function finishCajaScan(){ closeScanner(); nav("caja"); const r=$("recibi"); if(r) setTimeout(()=>r.focus(),120); }
 function camError(msg){ $("camErrMsg").textContent=msg; $("camErr").classList.add("on"); }
 function loadZXing(){return new Promise((res,rej)=>{ if(window.ZXing)return res();
   const s=document.createElement("script");
@@ -1152,7 +1185,7 @@ function beep(){try{const a=new(window.AudioContext||window.webkitAudioContext)(
   g.gain.setValueAtTime(.18,a.currentTime);g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+.15);o.stop(a.currentTime+.16);}catch(e){}}
 
 /* Enganches por pantalla */
-function scanCaja(){ openScanner(code=>{ addByCodeCaja(code); },{continuous:true,hint:"Escanea productos, uno tras otro"}); }
+function scanCaja(){ openScanner(code=>{ addByCodeCaja(code); },{continuous:true,cart:true,hint:"Escanea productos, uno tras otro"}); }
 function addByCodeCaja(code){
   const q=String(code||'').trim(); if(!q) return;
   let p=P.find(x=>x.barcode&&x.barcode===q);
@@ -1163,6 +1196,7 @@ function addByCodeCaja(code){
   if(enC>=p.stock){ camFlash("⚠ Solo hay "+p.stock+" de "+p.name, false); return; }
   addToCart(p.id);
   const now=cart.find(x=>x.id===p.id);
+  renderCamCart();
   camFlash("✔ "+p.name+"  ·  "+(now?now.qty:1)+" en la lista", true);
 }
 function existsBarcode(code){

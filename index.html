@@ -363,6 +363,7 @@
         <option value="bad">🔴 Por agotarse</option>
         <option value="warn">🟡 Cerca del límite</option>
         <option value="ok">🟢 Bien</option>
+        <option value="arch">📦 Archivados</option>
       </select>
     </div>
     <div class="card" id="invList"></div>
@@ -443,6 +444,7 @@
 
 <!-- Modal genérico -->
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<input type="file" id="ocrFile" accept="image/*" capture="environment" style="display:none" onchange="ocrHandle(event)">
 
 <!-- Escáner de cámara -->
 <div class="cam" id="cam">
@@ -690,7 +692,7 @@ function updateHoy(){
   $("hoyTotal").textContent=money(t);
 }
 function renderQuick(){
-  const qs=P.filter(p=>p.quick);
+  const qs=P.filter(p=>p.quick && !p.archived);
   $("quickGrid").innerHTML=qs.map(p=>`<button class="qbtn" onclick="addToCart('${p.id}')">
      <span class="em">${EMOJI[p.category]||"📦"}</span><span class="t">${p.name}</span><span class="pp num">${money(p.price)}</span></button>`).join("")
      || '<div style="color:var(--muted);font-size:13px">Marca productos como “botón rápido” al crearlos.</div>';
@@ -705,15 +707,17 @@ function fillFilters(){
 }
 function renderInv(){
   const q=$("invSearch").value.trim().toLowerCase(), fc=$("fCat").value, fl=$("fLoc").value, fe=$("fEstado").value;
-  let list=P.filter(p=>(!q||p.name.toLowerCase().includes(q)||(p.barcode&&p.barcode.includes(q)))
-    &&(!fc||p.category===fc)&&(!fl||p.location===fl)&&(!fe||estado(p)===fe));
+  const arch=fe==='arch';
+  let list=P.filter(p=>(arch? p.archived : !p.archived)
+    &&(!q||p.name.toLowerCase().includes(q)||(p.barcode&&p.barcode.includes(q)))
+    &&(!fc||p.category===fc)&&(!fl||p.location===fl)&&(arch||!fe||estado(p)===fe));
   list.sort((a,b)=>({bad:0,warn:1,ok:2}[estado(a)]-{bad:0,warn:1,ok:2}[estado(b)]));
-  $("invList").innerHTML=list.length?list.map(p=>`<div class="prod" onclick="openProd('${p.id}')">
+  $("invList").innerHTML=list.length?list.map(p=>`<div class="prod" onclick="openProd('${p.id}')" style="${p.archived?'opacity:.6':''}">
     <div class="av ${estado(p)}">${EMOJI[p.category]||'📦'}</div>
-    <div class="info"><b>${p.name}</b><span>${p.barcode?p.barcode+" · ":""}<span class="pill">${p.category}</span>${p.location?'<span class="pill">'+p.location+'</span>':''}</span></div>
+    <div class="info"><b>${p.name}${p.archived?' <span class="pill">archivado</span>':''}</b><span>${p.barcode?p.barcode+" · ":""}<span class="pill">${p.category}</span>${p.location?'<span class="pill">'+p.location+'</span>':''}</span></div>
     <div class="stk num">${p.stock}<small>mín ${p.minStock}</small></div>
     <div class="pr num">${money(p.price)}</div></div>`).join("")
-    :'<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Sin resultados.</div>';
+    :('<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">'+(arch?'No hay productos archivados.':'Sin resultados.')+'</div>');
 }
 
 /* ---- Modal helpers ---- */
@@ -729,6 +733,7 @@ function openProd(id=null,prefill=""){
   openModal(`<h3>${p?"Editar producto":"Nuevo producto"}<button class="x" onclick="closeModal()">×</button></h3>
    <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="f_bc" style="flex:1" value="${p?p.barcode:(/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Opcional"><button type="button" class="cambtn f" onclick="autoLookup('f_bc','f_nm','f_cat')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('f_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
    <div class="field"><label>Nombre</label><input id="f_nm" value="${p?p.name:(!/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Ej. Coca-Cola 500ml"></div>
+   <button type="button" class="ghost" style="margin:-2px 0 10px;font-size:14px" onclick="ocrCapture('f_nm','f_price')">📷 Leer nombre/peso/precio de una foto</button>
    <div class="two">
      <div class="field"><label>Categoría</label><select id="f_cat">${catOptions(p?p.category:"Otros")}</select></div>
      <div class="field"><label>Ubicación / percha</label><input id="f_loc" value="${p?p.location:""}" placeholder="Ej. Nevera 1"></div>
@@ -743,7 +748,8 @@ function openProd(id=null,prefill=""){
    </div>
    <div class="field"><label><input type="checkbox" id="f_quick" ${p&&p.quick?"checked":""} style="width:auto;margin-right:6px">Mostrar como botón rápido (sin código)</label></div>
    <button class="save" onclick="saveProd('${id||""}')">${p?"Guardar cambios":"Crear producto"}</button>
-   ${p?'<button class="ghost" onclick="delProd(\''+id+'\')">Eliminar producto</button>':''}`);
+   ${p?'<button class="ghost" onclick="toggleArchive(\''+id+'\')">'+(p.archived?'↩ Desarchivar (volver al inventario)':'📦 Archivar (ocultar del inventario)')+'</button>':''}
+   ${p?'<button class="ghost" onclick="delProd(\''+id+'\')" style="color:var(--bad)">Eliminar producto</button>':''}`);
   setTimeout(()=>$( id?"f_stock":( /^\\d+$/.test(prefill)?"f_nm":"f_bc") ).focus(),60);
 }
 async function saveProd(id){
@@ -757,6 +763,12 @@ async function saveProd(id){
   await sSet("productos",P); if(o.barcode) cbPut(o.barcode,o.name,o.category); closeModal(); renderAll(); toast("Producto guardado");
 }
 async function delProd(id){ P=P.filter(x=>x.id!==id); await sSet("productos",P); closeModal(); renderAll(); toast("Producto eliminado"); }
+async function toggleArchive(id){
+  const p=P.find(x=>x.id===id); if(!p) return;
+  p.archived=!p.archived;
+  await sSet("productos",P); closeModal(); renderAll();
+  toast(p.archived?"Producto archivado 📦":"Producto reactivado ↩");
+}
 
 /* ---- Compra rápida (informal) ---- */
 function openCompra(){
@@ -798,6 +810,7 @@ function openRapido(){
    <div class="field"><label>Sección que estás levantando</label><input id="r_sec" value="${sec}" placeholder="Ej. Refrigeradores"></div>
    <div class="field"><label>Código (opcional)</label><div style="display:flex;gap:8px"><input id="r_bc" style="flex:1" placeholder="Escanea aquí" autocomplete="off"><button type="button" class="cambtn f" onclick="autoLookup('r_bc','r_nm','r_cat')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('r_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
    <div class="field"><label>Nombre</label><input id="r_nm" placeholder="Nombre del producto"></div>
+   <button type="button" class="ghost" style="margin:-2px 0 10px;font-size:14px" onclick="ocrCapture('r_nm','r_price')">📷 Leer nombre/peso/precio de una foto</button>
    <div class="two">
      <div class="field"><label>Categoría</label><select id="r_cat">${catOptions("Otros")}</select></div>
      <div class="field"><label>Cantidad en percha</label><input id="r_qty" type="number" inputmode="numeric"></div>
@@ -1192,6 +1205,7 @@ function addByCodeCaja(code){
   let p=P.find(x=>x.barcode&&x.barcode===q);
   if(!p){ const m=P.filter(x=>x.name.toLowerCase()===q.toLowerCase()); if(m.length===1)p=m[0]; }
   if(!p){ camFlash("⚠ No registrado — agrégalo en Inventario", false); return; }
+  if(p.archived){ p.archived=false; sSet("productos",P); renderInv(); renderQuick(); toast("↩ Reactivado: "+p.name); }
   if(p.stock<=0){ camFlash("⚠ Sin stock: "+p.name, false); return; }
   const l=cart.find(x=>x.id===p.id), enC=l?l.qty:0;
   if(enC>=p.stock){ camFlash("⚠ Solo hay "+p.stock+" de "+p.name, false); return; }
@@ -1204,7 +1218,7 @@ function existsBarcode(code){
   code=String(code||'').trim(); if(!code) return false;
   const ex=P.find(p=>p.barcode&&p.barcode===code&&p.id!==_editingId);
   if(!ex) return false;
-  toast("Ya está registrado: "+ex.name);
+  toast(ex.archived?("Estaba archivado: "+ex.name+" — puedes desarchivarlo"):("Ya está registrado: "+ex.name));
   openProd(ex.id);   // abre el existente para editar (evita duplicar)
   return true;
 }
@@ -1269,6 +1283,43 @@ async function autoLookup(codeId,nameId,catId){
   else toast("No está en el catálogo; escribe el nombre y quedará guardado para la próxima.");
 }
 function scanCompra(){ openScanner(code=>{ const p=P.find(x=>x.barcode&&x.barcode===code); if(p){ pickCompra(p.id,p.name); } else { $("c_search").value=code; compraSearch(); } }); }
+
+/* ===== OCR: leer nombre/peso/precio de una foto del empaque ===== */
+let _ocrTarget=null;
+function loadTesseract(){return new Promise((res,rej)=>{ if(window.Tesseract)return res();
+  const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+  s.onload=()=>res(); s.onerror=()=>rej(new Error('cdn')); document.head.appendChild(s); });}
+function ocrCapture(nameId,priceId){ _ocrTarget={nameId,priceId}; $("ocrFile").click(); }
+async function ocrHandle(ev){
+  const file=ev.target.files&&ev.target.files[0]; ev.target.value='';
+  if(!file||!_ocrTarget) return;
+  const tgt=_ocrTarget; _ocrTarget=null;
+  toast("Leyendo el empaque… puede tardar unos segundos");
+  try{
+    await loadTesseract();
+    const {data}=await Tesseract.recognize(file,'spa+eng');
+    const r=parseOCR(data);
+    const nm=$(tgt.nameId), pr=tgt.priceId?$(tgt.priceId):null;
+    if(nm){ let base=nm.value.trim(); if(!base && r.name) base=r.name; if(r.peso && !/\d+\s?(kg|g|gr|ml|l|lt|oz|lb)/i.test(base)) base=(base+' '+r.peso).trim(); nm.value=base; }
+    if(pr && r.price && !pr.value) pr.value=r.price;
+    const found=[r.name,r.peso,r.price?('$'+r.price):''].filter(Boolean).join(' · ');
+    toast(found?("Leído: "+found):"No pude leer bien; escríbelo a mano.");
+  }catch(e){ toast("No se pudo leer la foto (revisa el internet)."); }
+}
+function parseOCR(data){
+  const text=((data&&data.text)||'').replace(/\s+/g,' ').trim();
+  let peso=''; const mp=text.match(/(\d+(?:[.,]\d+)?)\s?(kg|kilos?|gramos?|grs?|g|mg|litros?|lt|ml|cc|oz|libras?|lb)\b/i);
+  if(mp){ let u=mp[2].toLowerCase(); u=u.replace(/^gramos?$|^grs?$/,'g').replace(/^kilos?$/,'kg').replace(/^litros?$/,'l').replace(/^lt$/,'l').replace(/^libras?$/,'lb'); peso=mp[1].replace(',','.')+' '+u; }
+  let price=''; const mpr=text.match(/(?:pvp|p\.?v\.?p\.?|precio|\$)\s*:?\s*(\d+[.,]\d{2})/i)||text.match(/(\d+[.,]\d{2})\s*(?:usd|\$)/i)||text.match(/\$\s*(\d+(?:[.,]\d+)?)/);
+  if(mpr){ price=(mpr[1]||'').replace(',','.'); }
+  let name=''; const lines=(data&&data.lines)||[];
+  const cand=lines.map(l=>({t:(l.text||'').trim(),h:(l.bbox?(l.bbox.y1-l.bbox.y0):0),c:l.confidence||0}))
+    .filter(l=>l.t.length>=3 && /[a-záéíóúñ]/i.test(l.t) && !/^\d/.test(l.t) && l.c>40);
+  cand.sort((a,b)=>b.h-a.h);
+  if(cand.length) name=cand[0].t;
+  if(name){ name=name.replace(/\$?\s*\d+[.,]\d{2}/g,'').replace(/(\d+(?:[.,]\d+)?)\s?(kg|g|gr|ml|l|lt|oz|lb)\b/ig,'').replace(/\s{2,}/g,' ').trim(); }
+  return {name,peso,price};
+}
 
 /* ================= Enlace celular ↔ tablet (escáner remoto) ================= */
 const LINK_BROKER="wss://broker.emqx.io:8084/mqtt"; // relay público gratis (puedes cambiarlo por uno privado)

@@ -477,8 +477,8 @@ const $=id=>document.getElementById(id);
 const money=n=>"$"+(Math.round(n*100)/100).toFixed(2);
 const todayKey=()=>{const x=new Date();return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-const EMOJI={Bebidas:"🥤",Lácteos:"🥛",Snacks:"🍪",Abarrotes:"🍚",Aseo:"🧼",Panadería:"🥖","Frutas y verduras":"🥑",Otros:"📦",Huevos:"🥚",Recargas:"📶"};
-const CATS=["Bebidas","Lácteos","Snacks","Abarrotes","Panadería","Frutas y verduras","Aseo","Recargas","Otros"];
+const EMOJI={Bebidas:"🥤",Lácteos:"🥛",Snacks:"🍪",Abarrotes:"🍚",Aseo:"🧼",Limpieza:"🧽",Panadería:"🥖","Frutas y verduras":"🥑",Helados:"🍦",Carnes:"🥩",Otros:"📦",Huevos:"🥚",Recargas:"📶"};
+const CATS=["Bebidas","Lácteos","Snacks","Abarrotes","Panadería","Frutas y verduras","Helados","Carnes","Aseo","Limpieza","Recargas","Otros"];
 
 /* ---- Base de datos (IndexedDB en el aparato; respaldo automático) ---- */
 function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open("tiendaDB",1);
@@ -1245,12 +1245,15 @@ async function lookupBarcode(code){
 function guessCat(txt){
   txt=(txt||'').toLowerCase();
   const map=[
+    ['Helados',['helado','ice cream','ice-cream','sorbete','paleta','popsicle']],
+    ['Carnes',['carne','meat','pollo','chicken','res','beef','cerdo','pork','embutido','salchicha','sausage','jamón','ham','chorizo','tocino','bacon','pescado','fish']],
     ['Bebidas',['bebida','drink','gaseosa','soda','agua','water','jugo','juice','cola','cerveza','beer','vino','wine','café','coffee','tea','energiz']],
     ['Lácteos',['leche','milk','yogur','yoghurt','queso','cheese','dairy','lácteo','mantequilla','butter','crema']],
     ['Snacks',['snack','galleta','cookie','biscuit','chip','papas','chocolate','candy','dulce','caramelo','chicle','wafer','maní']],
     ['Panadería',['bread','bakery','bollo','pastel','tortilla']],
     ['Frutas y verduras',['fruit','fruta','vegetable','verdura','legumbre','hortaliza']],
-    ['Aseo',['soap','jabón','detergente','cleaner','limpieza','shampoo','champú','higién','papel','dental','dentíf','desinfect']],
+    ['Limpieza',['detergente','detergent','cloro','bleach','desinfect','limpiador','lavavajilla','dish soap','suavizante','esponja','escoba','trapeador']],
+    ['Aseo',['soap','jabón','shampoo','champú','higién','papel','dental','dentíf','pañal','toalla']],
     ['Abarrotes',['arroz','rice','pasta','fideo','aceite','oil','azúcar','sugar','harina','flour','conserva','enlatad','atún','tuna','sardina','frijol','lenteja','grano']]
   ];
   for(const [cat,kws] of map){ if(kws.some(k=>txt.includes(k))) return cat; }

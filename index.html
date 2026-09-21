@@ -351,6 +351,7 @@
       <button onclick="openCompra()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h2l2 12h11l2-8H6"/></svg>Compra rápida</button>
       <button onclick="document.getElementById('xmlFile').click()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6v20h12V8z"/><path d="M14 2v6h6"/></svg>Subir XML</button>
       <button onclick="openRapido()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>Inv. rápido</button>
+      <button onclick="refreshFromCloud()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>Actualizar</button>
     </div>
     <input type="file" id="xmlFile" accept=".xml" style="display:none" onchange="importXML(event)">
 
@@ -1445,6 +1446,23 @@ function autoLink(){
 /* ================= Toast ================= */
 let tt;
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1600); }
+
+async function refreshFromCloud(){
+  if(!(sbOn&&SB)){ toast("No estás conectado a la nube"); return; }
+  toast("Actualizando desde la nube…");
+  try{
+    const kp=await cget('productos'); if(kp&&kp.value){ P=kp.value; await lset('productos',P,kp.ts||Date.now()); }
+    const kv=await cget('ventas');    if(kv&&kv.value){ V=kv.value;   await lset('ventas',V,kv.ts||Date.now()); }
+    const ks=await cget('salidas');   if(ks&&ks.value){ S=ks.value;   await lset('salidas',S,ks.ts||Date.now()); }
+    const kc=await cget('config');    if(kc&&kc.value){ CFG=kc.value; applyTheme(CFG.theme||'verde'); if($("storeName"))$("storeName").value=CFG.store||""; }
+    renderAll(); toast("Actualizado ✓");
+  }catch(e){ toast("No se pudo actualizar."); }
+}
+async function syncOnFocus(){
+  if(!(sbOn&&SB)) return;
+  try{ P=await load('productos',P); V=await load('ventas',V); S=await load('salidas',S); CFG=await load('config',CFG); applyTheme(CFG.theme||'verde'); renderAll(); }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syncOnFocus(); });
 
 if('serviceWorker' in navigator){
   let _rl=false;

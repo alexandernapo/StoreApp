@@ -562,9 +562,35 @@ async function load(k,seed){
   if(loc && !cl){ await cset(k,loc.value,loc.ts); return loc.value; } // nube vacía → subir local
   const ts=Date.now(); await lset(k,seed,ts); await cset(k,seed,ts); return seed; // nada → semilla
 }
+/* ===== Inventario fila por fila en la nube (tabla productos) ===== */
+async function pAllFromCloud(){
+  if(!(sbOn&&SB)) return null;
+  try{ const {data,error}=await SB.from('productos').select('data'); if(error) return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; }
+}
+async function saveProductos(){
+  await lset('productos',P,Date.now());
+  if(sbOn&&SB && P.length){ try{ await SB.from('productos').upsert(P.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){ console.warn('save prod',e); } }
+}
+async function pDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('productos').delete().eq('id',id); }catch(e){} } }
+async function loadProductos(){
+  if(sbOn&&SB){
+    const rows=await pAllFromCloud();
+    if(rows!==null){
+      if(rows.length){ P=rows; await lset('productos',P,Date.now()); return; }
+      let old=null;
+      const lc=await lget('productos'); if(lc&&Array.isArray(lc.value)&&lc.value.length) old=lc.value;
+      if(!old){ const cc=await cget('productos'); if(cc&&Array.isArray(cc.value)&&cc.value.length) old=cc.value; }
+      if(old){ P=old; await saveProductos(); return; }
+      P=SEED.map(x=>({...x,id:uid()})); await saveProductos(); return;
+    }
+  }
+  P=await load('productos',SEED);
+}
+let _pt; function debouncedPullProd(){ clearTimeout(_pt); _pt=setTimeout(async()=>{ const rows=await pAllFromCloud(); if(rows){ P=rows; await lset('productos',P,Date.now()); renderAll(); } },600); }
+
 async function boot(){
   await initCloudFromSaved();
-  P=await load("productos",SEED);
+  await loadProductos();
   V=await load("ventas",[]);
   S=await load("salidas",[]);
   CFG=await load("config",{store:"Mi Tienda"});
@@ -684,7 +710,7 @@ async function cobrar(){
   // descontar stock
   cart.forEach(l=>{ const p=P.find(x=>x.id===l.id); if(p) p.stock=Math.max(0,p.stock-l.qty); });
   V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category})),total:t,pago});
-  await sSet("productos",P); await sSet("ventas",V);
+  await saveProductos(); await sSet("ventas",V);
   cart=[]; $("recibi").value=""; renderCart(); renderInv(); updateHoy();
   toast("Venta cobrada · "+money(t)); $("scan").focus();
 }
@@ -761,13 +787,13 @@ async function saveProd(id){
   if(!o.name){toast("Ponle un nombre al producto");return;}
   if(o.barcode){ const dup=P.find(x=>x.barcode&&x.barcode===o.barcode&&x.id!==id); if(dup){ toast("Ese código ya está registrado en: "+dup.name); return; } }
   if(id){ Object.assign(P.find(x=>x.id===id),o); } else { P.push({id:uid(),...o}); }
-  await sSet("productos",P); if(o.barcode) cbPut(o.barcode,o.name,o.category); closeModal(); renderAll(); toast("Producto guardado");
+  await saveProductos(); if(o.barcode) cbPut(o.barcode,o.name,o.category); closeModal(); renderAll(); toast("Producto guardado");
 }
-async function delProd(id){ P=P.filter(x=>x.id!==id); await sSet("productos",P); closeModal(); renderAll(); toast("Producto eliminado"); }
+async function delProd(id){ P=P.filter(x=>x.id!==id); await saveProductos(); pDeleteRow(id); closeModal(); renderAll(); toast("Producto eliminado"); }
 async function toggleArchive(id){
   const p=P.find(x=>x.id===id); if(!p) return;
   p.archived=!p.archived;
-  await sSet("productos",P); closeModal(); renderAll();
+  await saveProductos(); closeModal(); renderAll();
   toast(p.archived?"Producto archivado 📦":"Producto reactivado ↩");
 }
 
@@ -800,7 +826,7 @@ async function saveCompra(){
   const p=P.find(x=>x.id===id);
   if(tot>0) p.cost=Math.round((tot/qty)*100)/100;
   p.stock+=qty;
-  await sSet("productos",P); closeModal(); renderAll(); toast(`+${qty} de ${p.name}`);
+  await saveProductos(); closeModal(); renderAll(); toast(`+${qty} de ${p.name}`);
 }
 
 /* ---- Inventario rápido ---- */
@@ -826,7 +852,7 @@ async function saveRapido(){
   CFG.rapidoSec=$("r_sec").value.trim(); await sSet("config",CFG);
   P.push({id:uid(),barcode:$("r_bc").value.trim(),name:nm,category:$("r_cat").value,
     location:CFG.rapidoSec,cost:0,price:+$("r_price").value||0,stock:+$("r_qty").value||0,minStock:3,quick:false});
-  await sSet("productos",P); renderAll();
+  await saveProductos(); renderAll();
   ["r_bc","r_nm","r_qty","r_price"].forEach(i=>$(i).value="");
   $("r_count").textContent=`✔ ${P.length} productos en total`;
   toast(nm+" agregado"); $("r_bc").focus();
@@ -877,7 +903,7 @@ async function applyImport(){
     else { P.push({id:uid(),barcode:r.barcode,name:r.name||"Producto sin nombre",category:"Otros",
       location:"",cost:r.cost,price:Math.round(r.cost*1.3*100)/100,stock:qty,minStock:3,quick:false}); }
   });
-  await sSet("productos",P); closeModal(); renderAll(); toast("Factura importada");
+  await saveProductos(); closeModal(); renderAll(); toast("Factura importada");
 }
 
 /* ================= REPORTES ================= */
@@ -991,17 +1017,19 @@ function subscribeCloud(){
   try{ SB.channel('kv-'+Math.random().toString(36).slice(2))
     .on('postgres_changes',{event:'*',schema:'public',table:'kv'},p=>{ if(p.new&&p.new.key) applyCloudChange(p.new.key,p.new.value,p.new.updated_at); })
     .subscribe(); }catch(e){}
+  try{ SB.channel('prod-'+Math.random().toString(36).slice(2))
+    .on('postgres_changes',{event:'*',schema:'public',table:'productos'},()=>{ debouncedPullProd(); })
+    .subscribe(); }catch(e){}
 }
 async function applyCloudChange(k,val,updated_at){
+  if(k!=='ventas'&&k!=='salidas'&&k!=='config') return;
   const ts=updated_at?Date.parse(updated_at):Date.now();
   const loc=await lget(k);
   if(loc && loc.ts>ts) return;      // lo local es más nuevo: no pisar
   await lset(k,val,ts);
-  if(k==='productos') P=val||[];
-  else if(k==='ventas') V=val||[];
+  if(k==='ventas') V=val||[];
   else if(k==='salidas') S=val||[];
   else if(k==='config'){ CFG=val||CFG; applyTheme(CFG.theme||'verde'); if($("storeName"))$("storeName").value=CFG.store||""; }
-  else return;
   renderAll();
 }
 async function connectCloud(){
@@ -1013,8 +1041,8 @@ async function connectCloud(){
     const {error}=await SB.from('kv').select('key').limit(1); if(error) throw error;
     sbOn=true; localStorage.setItem('sbcfg',JSON.stringify({url,key}));
     subscribeCloud();
-    // Fusiona local con nube (gana el más reciente) para todas las claves
-    P=await load('productos',SEED); V=await load('ventas',[]); S=await load('salidas',[]); CFG=await load('config',{store:'Mi Tienda'});
+    // Fusiona local con nube para todas las claves
+    await loadProductos(); V=await load('ventas',[]); S=await load('salidas',[]); CFG=await load('config',{store:'Mi Tienda'});
     applyTheme(CFG.theme||'verde');
     closeModal(); renderAll(); toast("Conectado a la nube ✓");
   }catch(e){ toast("No se pudo conectar. Revisa los datos y el SQL."); }
@@ -1024,8 +1052,9 @@ async function pushForce(){
   if(!(sbOn&&SB)) return toast("Conéctate primero");
   if(!confirm("Esto hará que el inventario, ventas y ajustes de ESTE aparato reemplacen lo que hay en la nube. ¿Continuar?")) return;
   const ts=Date.now();
-  await cset('productos',P,ts); await cset('ventas',V,ts); await cset('salidas',S,ts); await cset('config',CFG,ts);
-  await lset('productos',P,ts); await lset('ventas',V,ts); await lset('salidas',S,ts); await lset('config',CFG,ts);
+  await saveProductos();
+  await cset('ventas',V,ts); await cset('salidas',S,ts); await cset('config',CFG,ts);
+  await lset('ventas',V,ts); await lset('salidas',S,ts); await lset('config',CFG,ts);
   closeModal(); toast("Datos de este aparato subidos a la nube ✓");
 }
 function openCloud(){
@@ -1036,6 +1065,7 @@ function openCloud(){
    <div class="field"><label>Project URL</label><input id="sbUrl" placeholder="https://xxxxx.supabase.co" value="${s.url||''}"></div>
    <div class="field"><label>anon / publishable key</label><input id="sbKey" placeholder="sb_publishable_… o eyJhbGciOi…" value="${s.key||''}"></div>
    <button class="save" onclick="connectCloud()">${sbOn?'Reconectar':'Conectar'}</button>
+   ${sbOn?'<button class="ghost" onclick="importFromCatalog()">📥 Traer productos del catálogo al inventario</button>':''}
    ${sbOn?'<button class="ghost" onclick="contribAll()">📚 Aportar mi inventario al catálogo</button>':''}
    ${sbOn?'<button class="ghost" onclick="pushForce()">⬆️ Subir lo de este aparato a la nube</button>':''}
    ${sbOn?'<button class="ghost" onclick="disconnectCloud()">Desconectar (volver a local)</button>':''}`);
@@ -1104,8 +1134,9 @@ async function clearVentas(){
 }
 async function resetDemo(){
   if(!confirm("Esto borra productos, ventas y salidas, y vuelve a los datos de ejemplo. ¿Continuar?"))return;
+  if(sbOn&&SB){ try{ await SB.from('productos').delete().neq('id',''); }catch(e){} }
   P=SEED.map(x=>({...x,id:uid()})); V=[]; S=[];
-  await sSet("productos",P); await sSet("ventas",V); await sSet("salidas",S);
+  await saveProductos(); await sSet("ventas",V); await sSet("salidas",S);
   renderAll(); nav("caja"); toast("Datos reiniciados");
 }
 
@@ -1206,7 +1237,7 @@ function addByCodeCaja(code){
   let p=P.find(x=>x.barcode&&x.barcode===q);
   if(!p){ const m=P.filter(x=>x.name.toLowerCase()===q.toLowerCase()); if(m.length===1)p=m[0]; }
   if(!p){ camFlash("⚠ No registrado — agrégalo en Inventario", false); return; }
-  if(p.archived){ p.archived=false; sSet("productos",P); renderInv(); renderQuick(); toast("↩ Reactivado: "+p.name); }
+  if(p.archived){ p.archived=false; saveProductos(); renderInv(); renderQuick(); toast("↩ Reactivado: "+p.name); }
   if(p.stock<=0){ camFlash("⚠ Sin stock: "+p.name, false); return; }
   const l=cart.find(x=>x.id===p.id), enC=l?l.qty:0;
   if(enC>=p.stock){ camFlash("⚠ Solo hay "+p.stock+" de "+p.name, false); return; }
@@ -1242,6 +1273,27 @@ async function contribAll(){
   toast("Aportando al catálogo…");
   for(const p of items){ await cbPut(p.barcode,p.name,p.category); }
   closeModal(); toast("Catálogo actualizado ✓ ("+items.length+")");
+}
+async function importFromCatalog(){
+  if(!(sbOn&&SB)) return toast("Conéctate primero");
+  if(!confirm("Traerá los productos del catálogo al inventario. Los nuevos entran con precio y stock en 0 (los rellenas después). ¿Continuar?")) return;
+  toast("Trayendo catálogo…");
+  try{
+    let rows=[], from=0; const page=1000;
+    while(true){
+      const {data,error}=await SB.from('catalogo').select('barcode,name,category').range(from,from+page-1);
+      if(error) throw error;
+      rows=rows.concat(data||[]);
+      if(!data||data.length<page) break; from+=page;
+    }
+    const have=new Set(P.filter(p=>p.barcode).map(p=>p.barcode));
+    let added=0;
+    rows.forEach(r=>{ if(r.barcode && !have.has(r.barcode)){
+      P.push({id:uid(),barcode:r.barcode,name:r.name||'Producto',category:r.category||'Otros',location:'',cost:0,price:0,stock:0,minStock:3,quick:false,archived:false});
+      have.add(r.barcode); added++; } });
+    await saveProductos(); closeModal(); renderAll();
+    toast("Importados "+added+" del catálogo ✓ (revisa precios y stock)");
+  }catch(e){ toast("No se pudo importar el catálogo."); }
 }
 async function lookupBarcode(code){
   const hosts=['https://world.openfoodfacts.org','https://world.openproductsfacts.org'];
@@ -1452,20 +1504,20 @@ async function refreshFromCloud(){
   if(!(sbOn&&SB)){ toast("Sin conexión a la nube. Revisa Reportes → ☁️ Configurar"); return; }
   toast("Trayendo inventario de la nube…");
   try{
-    const kp=await cget('productos');
-    if(kp===undefined){ toast("No se pudo leer la nube (revisa internet)."); return; }
-    if(kp && Array.isArray(kp.value)){ P=kp.value; await lset('productos',P,kp.ts||Date.now()); }
+    const rows=await pAllFromCloud();
+    if(rows===null){ toast("No se pudo leer la nube (revisa internet)."); return; }
+    if(rows.length){ P=rows; await lset('productos',P,Date.now()); }
     else { toast("La nube aún no tiene inventario guardado."); }
     const kv=await cget('ventas');    if(kv&&kv.value){ V=kv.value;   await lset('ventas',V,kv.ts||Date.now()); }
     const ks=await cget('salidas');   if(ks&&ks.value){ S=ks.value;   await lset('salidas',S,ks.ts||Date.now()); }
     const kc=await cget('config');    if(kc&&kc.value){ CFG=kc.value; applyTheme(CFG.theme||'verde'); if($("storeName"))$("storeName").value=CFG.store||""; }
     renderAll();
-    if(kp && Array.isArray(kp.value)) toast("Inventario actualizado ✓ ("+P.filter(x=>!x.archived).length+" productos)");
+    if(rows.length) toast("Inventario actualizado ✓ ("+P.filter(x=>!x.archived).length+" productos)");
   }catch(e){ toast("No se pudo actualizar."); }
 }
 async function syncOnFocus(){
   if(!(sbOn&&SB)) return;
-  try{ P=await load('productos',P); V=await load('ventas',V); S=await load('salidas',S); CFG=await load('config',CFG); applyTheme(CFG.theme||'verde'); renderAll(); }catch(e){}
+  try{ await loadProductos(); V=await load('ventas',V); S=await load('salidas',S); CFG=await load('config',CFG); applyTheme(CFG.theme||'verde'); renderAll(); }catch(e){}
 }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syncOnFocus(); });
 

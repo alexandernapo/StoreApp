@@ -1448,14 +1448,19 @@ let tt;
 function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),1600); }
 
 async function refreshFromCloud(){
-  if(!(sbOn&&SB)){ toast("No estás conectado a la nube"); return; }
-  toast("Actualizando desde la nube…");
+  if(!(sbOn&&SB)){ toast("Conectando a la nube…"); await initCloudFromSaved(); }
+  if(!(sbOn&&SB)){ toast("Sin conexión a la nube. Revisa Reportes → ☁️ Configurar"); return; }
+  toast("Trayendo inventario de la nube…");
   try{
-    const kp=await cget('productos'); if(kp&&kp.value){ P=kp.value; await lset('productos',P,kp.ts||Date.now()); }
+    const kp=await cget('productos');
+    if(kp===undefined){ toast("No se pudo leer la nube (revisa internet)."); return; }
+    if(kp && Array.isArray(kp.value)){ P=kp.value; await lset('productos',P,kp.ts||Date.now()); }
+    else { toast("La nube aún no tiene inventario guardado."); }
     const kv=await cget('ventas');    if(kv&&kv.value){ V=kv.value;   await lset('ventas',V,kv.ts||Date.now()); }
     const ks=await cget('salidas');   if(ks&&ks.value){ S=ks.value;   await lset('salidas',S,ks.ts||Date.now()); }
     const kc=await cget('config');    if(kc&&kc.value){ CFG=kc.value; applyTheme(CFG.theme||'verde'); if($("storeName"))$("storeName").value=CFG.store||""; }
-    renderAll(); toast("Actualizado ✓");
+    renderAll();
+    if(kp && Array.isArray(kp.value)) toast("Inventario actualizado ✓ ("+P.filter(x=>!x.archived).length+" productos)");
   }catch(e){ toast("No se pudo actualizar."); }
 }
 async function syncOnFocus(){

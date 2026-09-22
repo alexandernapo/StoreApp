@@ -329,6 +329,7 @@
           <div class="pay">
             <button id="payEfectivo" class="on" onclick="setPago('efectivo')">💵 Efectivo</button>
             <button id="payTransfer" onclick="setPago('transferencia')">📱 Transfer.</button>
+            <button id="payFiado" onclick="setPago('fiado')">📒 Fiado</button>
           </div>
           <div id="cashArea">
             <div class="cashrow"><label>Recibí</label><input id="recibi" class="num" type="number" inputmode="decimal" placeholder="0.00" oninput="calcCambio()"></div>
@@ -430,6 +431,16 @@
     <button class="ghost" style="margin-top:22px;max-width:320px" onclick="clearVentas()">🧹 Vaciar ventas y reportes (conserva productos)</button>
     <button class="ghost" style="margin-top:8px;max-width:260px;color:var(--bad)" onclick="resetDemo()">Reiniciar TODO a datos de ejemplo</button>
   </section>
+
+  <!-- FIADOS -->
+  <section class="view" id="v-fiados">
+    <div class="card bigsale"><span>Total por cobrar (fiado)</span><b class="num" id="fiadoTotal">$0.00</b></div>
+    <div class="actbtns">
+      <button class="solid" onclick="openFiadoNew()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Nuevo cliente</button>
+    </div>
+    <div class="toolbar"><input class="search" id="fiadoSearch" placeholder="Buscar cliente…" oninput="renderFiados()"></div>
+    <div class="card" id="fiadoList"></div>
+  </section>
 </main>
 
 <nav>
@@ -437,6 +448,8 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7h20l-1.5 9a2 2 0 01-2 1.7H5.5a2 2 0 01-2-1.7z"/><path d="M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2"/></svg>Caja</button>
   <button data-v="inv" onclick="nav('inv')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>Inventario</button>
+  <button data-v="fiados" onclick="nav('fiados')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18v14H3z"/><path d="M3 10h18M7 15h4"/></svg>Fiados</button>
   <button data-v="rep" onclick="nav('rep')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Reportes</button>
 </nav>
@@ -473,6 +486,7 @@
 let P=[], V=[], S=[], CFG={store:"Mi Tienda"};
 let cart=[], pago="efectivo";
 let SB=null, sbOn=false;
+let F=[];
 let _editingId=null;
 const SB_URL="https://inldqynhwmmkglqeplje.supabase.co";
 const SB_KEY="sb_publishable_4JXQBAHlF-kzM_2u6P9WRw_gxspo9nq";
@@ -588,9 +602,23 @@ async function loadProductos(){
 }
 let _pt; function debouncedPullProd(){ clearTimeout(_pt); _pt=setTimeout(async()=>{ const rows=await pAllFromCloud(); if(rows){ P=rows; await lset('productos',P,Date.now()); renderAll(); } },600); }
 
+/* ===== Fiados (cuentas por cobrar) en la nube ===== */
+async function fAllFromCloud(){ if(!(sbOn&&SB))return null; try{ const {data,error}=await SB.from('fiados').select('data'); if(error)return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; } }
+async function saveFiados(){ await lset('fiados',F,Date.now()); if(sbOn&&SB&&F.length){ try{ await SB.from('fiados').upsert(F.map(c=>({id:c.id,data:c,updated_at:new Date().toISOString()}))); }catch(e){} } }
+async function fDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('fiados').delete().eq('id',id); }catch(e){} } }
+async function loadFiados(){
+  if(sbOn&&SB){ const rows=await fAllFromCloud(); if(rows!==null){
+      if(rows.length){ F=rows; await lset('fiados',F,Date.now()); return; }
+      const lc=await lget('fiados'); if(lc&&Array.isArray(lc.value)&&lc.value.length){ F=lc.value; await saveFiados(); return; }
+      F=[]; return; } }
+  const lc=await lget('fiados'); F=(lc&&Array.isArray(lc.value))?lc.value:[];
+}
+let _ft; function debouncedPullFiados(){ clearTimeout(_ft); _ft=setTimeout(async()=>{ const rows=await fAllFromCloud(); if(rows){ F=rows; await lset('fiados',F,Date.now()); renderFiados(); } },600); }
+
 async function boot(){
   await initCloudFromSaved();
   await loadProductos();
+  await loadFiados();
   V=await load("ventas",[]);
   S=await load("salidas",[]);
   CFG=await load("config",{store:"Mi Tienda"});
@@ -605,7 +633,7 @@ async function boot(){
   if(new URLSearchParams(location.search).get('camara')){ nav('caja'); setTimeout(()=>scanCaja(), 1650); }
 }
 function hideSplash(){ const s=$("splash"); if(!s)return; s.classList.add("hide"); setTimeout(()=>{ if(s&&s.parentNode) s.parentNode.removeChild(s); },600); }
-function renderAll(){renderQuick();renderCart();renderInv();fillFilters();renderRep();updateHoy();}
+function renderAll(){renderQuick();renderCart();renderInv();fillFilters();renderRep();renderFiados();updateHoy();}
 
 /* ================= Estado de stock (semáforo) ================= */
 function estado(p){
@@ -622,6 +650,7 @@ function nav(v){
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active",b.dataset.v===v));
   if(v==="caja") setTimeout(()=>$("scan").focus(),50);
   if(v==="rep") renderRep();
+  if(v==="fiados") renderFiados();
 }
 
 /* ================= CAJA ================= */
@@ -687,6 +716,7 @@ async function loadCart(){ try{ let raw=window.indexedDB? await idbGet('cart_ope
 function setPago(m){ pago=m;
   $("payEfectivo").classList.toggle("on",m==="efectivo");
   $("payTransfer").classList.toggle("on",m==="transferencia");
+  if($("payFiado")) $("payFiado").classList.toggle("on",m==="fiado");
   $("cashArea").style.display=m==="efectivo"?"block":"none";
 }
 function total(){return cart.reduce((s,l)=>s+l.price*l.qty,0);}
@@ -707,12 +737,38 @@ async function cobrar(){
   const t=total();
   if(pago==="efectivo"){ const r=parseFloat($("recibi").value)||0;
     if(r>0 && r<t){ toast("El monto recibido es menor al total"); return; } }
-  // descontar stock
+  if(pago==="fiado"){ return chooseFiado(t); }
+  await finalizeSale(null);
+}
+async function finalizeSale(fiadoId){
+  const t=total();
   cart.forEach(l=>{ const p=P.find(x=>x.id===l.id); if(p) p.stock=Math.max(0,p.stock-l.qty); });
-  V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category})),total:t,pago});
+  V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category})),total:t,pago,fiadoId:fiadoId||null});
   await saveProductos(); await sSet("ventas",V);
+  if(pago==="fiado" && fiadoId){ await addCargoFiado(fiadoId,t,"Venta fiada"); }
   cart=[]; $("recibi").value=""; renderCart(); renderInv(); updateHoy();
-  toast("Venta cobrada · "+money(t)); $("scan").focus();
+  toast(pago==="fiado"?("Fiado registrado · "+money(t)):("Venta cobrada · "+money(t))); $("scan").focus();
+}
+function chooseFiado(t){
+  const list=F.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  openModal(`<h3>¿A quién se le fía?<button class="x" onclick="closeModal()">×</button></h3>
+   <div class="hint">Total a fiar: <b>${money(t)}</b></div>
+   <div class="field"><input id="fiPick" placeholder="Buscar o escribir nombre nuevo…" oninput="fiPickList()" autocomplete="off"></div>
+   <div id="fiPickList"></div>
+   <button class="save" onclick="fiPickNew()">Crear cliente nuevo y fiar</button>`);
+  window._fiT=t; setTimeout(()=>{ $("fiPick").focus(); fiPickList(); },60);
+}
+function fiPickList(){
+  const q=($("fiPick").value||'').trim().toLowerCase();
+  const hits=F.filter(c=>!q||c.name.toLowerCase().includes(q)).slice(0,8);
+  $("fiPickList").innerHTML='<div class="dropdown" style="position:static;margin:0 0 10px">'+(hits.length?hits.map(c=>
+    `<button onclick="fiConfirm('${c.id}')"><span>${c.name}</span><span class="num">${money(saldoFiado(c))}</span></button>`).join(''):'<div style="padding:10px;color:var(--muted);font-size:13px">Sin coincidencias — crea uno nuevo abajo.</div>')+'</div>';
+}
+async function fiConfirm(id){ closeModal(); await finalizeSale(id); }
+async function fiPickNew(){
+  const nm=($("fiPick").value||'').trim(); if(!nm)return toast("Escribe el nombre del cliente");
+  const c={id:uid(),name:nm,phone:'',movs:[]}; F.push(c); await saveFiados();
+  closeModal(); await finalizeSale(c.id);
 }
 function updateHoy(){
   const t=V.filter(v=>v.date===todayKey()).reduce((s,v)=>s+v.total,0);
@@ -1020,6 +1076,9 @@ function subscribeCloud(){
   try{ SB.channel('prod-'+Math.random().toString(36).slice(2))
     .on('postgres_changes',{event:'*',schema:'public',table:'productos'},()=>{ debouncedPullProd(); })
     .subscribe(); }catch(e){}
+  try{ SB.channel('fia-'+Math.random().toString(36).slice(2))
+    .on('postgres_changes',{event:'*',schema:'public',table:'fiados'},()=>{ debouncedPullFiados(); })
+    .subscribe(); }catch(e){}
 }
 async function applyCloudChange(k,val,updated_at){
   if(k!=='ventas'&&k!=='salidas'&&k!=='config') return;
@@ -1042,7 +1101,7 @@ async function connectCloud(){
     sbOn=true; localStorage.setItem('sbcfg',JSON.stringify({url,key}));
     subscribeCloud();
     // Fusiona local con nube para todas las claves
-    await loadProductos(); V=await load('ventas',[]); S=await load('salidas',[]); CFG=await load('config',{store:'Mi Tienda'});
+    await loadProductos(); V=await load('ventas',[]); S=await load('salidas',[]); CFG=await load('config',{store:'Mi Tienda'}); await loadFiados();
     applyTheme(CFG.theme||'verde');
     closeModal(); renderAll(); toast("Conectado a la nube ✓");
   }catch(e){ toast("No se pudo conectar. Revisa los datos y el SQL."); }
@@ -1052,7 +1111,7 @@ async function pushForce(){
   if(!(sbOn&&SB)) return toast("Conéctate primero");
   if(!confirm("Esto hará que el inventario, ventas y ajustes de ESTE aparato reemplacen lo que hay en la nube. ¿Continuar?")) return;
   const ts=Date.now();
-  await saveProductos();
+  await saveProductos(); await saveFiados();
   await cset('ventas',V,ts); await cset('salidas',S,ts); await cset('config',CFG,ts);
   await lset('ventas',V,ts); await lset('salidas',S,ts); await lset('config',CFG,ts);
   closeModal(); toast("Datos de este aparato subidos a la nube ✓");
@@ -1139,6 +1198,62 @@ async function resetDemo(){
   await saveProductos(); await sSet("ventas",V); await sSet("salidas",S);
   renderAll(); nav("caja"); toast("Datos reiniciados");
 }
+
+/* ================= FIADOS ================= */
+function saldoFiado(c){ return (c.movs||[]).reduce((s,m)=> s + (m.tipo==='cargo'? m.amount : -m.amount), 0); }
+function renderFiados(){
+  const q=(($("fiadoSearch")&&$("fiadoSearch").value.trim().toLowerCase())||'');
+  const arr=F.filter(c=>!q||c.name.toLowerCase().includes(q)).map(c=>({c,s:saldoFiado(c)}));
+  arr.sort((a,b)=>b.s-a.s);
+  const totalDebe=F.reduce((s,c)=>s+Math.max(0,saldoFiado(c)),0);
+  if($("fiadoTotal")) $("fiadoTotal").textContent=money(totalDebe);
+  const box=$("fiadoList"); if(!box)return;
+  box.innerHTML=arr.length? arr.map(({c,s})=>`<div class="prod" onclick="openFiado('${c.id}')">
+     <div class="av ${s>0.001?'bad':'ok'}">${s>0.001?'📕':'📗'}</div>
+     <div class="info"><b>${c.name}</b><span>${c.phone?c.phone+' · ':''}${(c.movs||[]).length} movimientos</span></div>
+     <div class="pr num" style="color:${s>0.001?'var(--bad)':'var(--ok)'}">${money(s)}</div></div>`).join('')
+    : '<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Sin clientes. Toca “Nuevo cliente” o cobra una venta como 📒 Fiado.</div>';
+}
+function openFiadoNew(){
+  openModal(`<h3>Nuevo cliente<button class="x" onclick="closeModal()">×</button></h3>
+   <div class="field"><label>Nombre</label><input id="fi_nm" placeholder="Ej. Doña Rosa"></div>
+   <div class="field"><label>Teléfono (opcional)</label><input id="fi_ph" inputmode="tel" placeholder="09..."></div>
+   <button class="save" onclick="saveFiadoNew()">Crear cliente</button>`);
+  setTimeout(()=>$("fi_nm").focus(),60);
+}
+async function saveFiadoNew(){
+  const nm=$("fi_nm").value.trim(); if(!nm)return toast("Ponle un nombre");
+  F.push({id:uid(),name:nm,phone:$("fi_ph").value.trim(),movs:[]}); await saveFiados(); closeModal(); renderFiados(); toast("Cliente creado");
+}
+function openFiado(id){
+  const c=F.find(x=>x.id===id); if(!c)return;
+  const s=saldoFiado(c), movs=(c.movs||[]).slice().sort((a,b)=>b.ts-a.ts);
+  openModal(`<h3>${c.name}<button class="x" onclick="closeModal()">×</button></h3>
+   ${c.phone?'<div class="hint">📞 '+c.phone+'</div>':''}
+   <div class="diff ${s>0.001?'bad':'ok'}" style="margin-bottom:12px"><span>Saldo que debe</span><span class="num">${money(s)}</span></div>
+   <div style="display:flex;gap:8px;margin-bottom:14px">
+     <button class="save" style="flex:1;margin:0;background:var(--bad)" onclick="movFiado('${id}','cargo')">➕ Fía (cargo)</button>
+     <button class="save" style="flex:1;margin:0;background:var(--ok)" onclick="movFiado('${id}','abono')">➖ Abono (pago)</button>
+   </div>
+   <h2>Movimientos</h2>
+   <div class="card" style="padding:2px 4px">${movs.length? movs.map(m=>`<div class="rowline"><span>${m.date||''} · ${m.tipo==='cargo'?'Fía':'Abono'}${m.concept?(' · '+m.concept):''}</span><b class="num" style="color:${m.tipo==='cargo'?'var(--bad)':'var(--ok)'}">${m.tipo==='cargo'?'+':'−'}${money(m.amount).slice(1)}</b></div>`).join(''):'<div class="rowline" style="color:var(--muted)">Sin movimientos.</div>'}</div>
+   <button class="ghost" style="margin-top:12px;color:var(--bad)" onclick="delFiado('${id}')">Eliminar cliente</button>`);
+}
+function movFiado(id,tipo){
+  openModal(`<h3>${tipo==='cargo'?'Registrar fiado (cargo)':'Registrar abono (pago)'}<button class="x" onclick="closeModal()">×</button></h3>
+   <div class="field"><label>Monto $</label><input id="mv_amt" type="number" inputmode="decimal" placeholder="0.00"></div>
+   <div class="field"><label>Concepto (opcional)</label><input id="mv_c" placeholder="${tipo==='cargo'?'Ej. Víveres':'Ej. Abono'}"></div>
+   <button class="save" onclick="saveMov('${id}','${tipo}')">Guardar</button>`);
+  setTimeout(()=>$("mv_amt").focus(),60);
+}
+async function saveMov(id,tipo){
+  const c=F.find(x=>x.id===id); if(!c)return;
+  const amt=+$("mv_amt").value||0; if(amt<=0)return toast("Monto inválido");
+  (c.movs=c.movs||[]).push({ts:Date.now(),date:todayKey(),tipo,amount:amt,concept:$("mv_c").value.trim()});
+  await saveFiados(); openFiado(id); renderFiados(); toast(tipo==='cargo'?"Fiado registrado":"Abono registrado");
+}
+async function addCargoFiado(id,amount,concept){ const c=F.find(x=>x.id===id); if(!c)return; (c.movs=c.movs||[]).push({ts:Date.now(),date:todayKey(),tipo:'cargo',amount,concept:concept||'Venta fiada'}); await saveFiados(); renderFiados(); }
+async function delFiado(id){ if(!confirm("¿Eliminar este cliente y su historial de fiado?"))return; F=F.filter(x=>x.id!==id); await saveFiados(); fDeleteRow(id); closeModal(); renderFiados(); toast("Cliente eliminado"); }
 
 /* ================= Escáner de cámara ================= */
 let _camStream=null,_camLoop=null,_camReader=null,_camCb=null,_camCont=false,_lastCode="",_lastAt=0,_lastAny=0;
@@ -1511,13 +1626,14 @@ async function refreshFromCloud(){
     const kv=await cget('ventas');    if(kv&&kv.value){ V=kv.value;   await lset('ventas',V,kv.ts||Date.now()); }
     const ks=await cget('salidas');   if(ks&&ks.value){ S=ks.value;   await lset('salidas',S,ks.ts||Date.now()); }
     const kc=await cget('config');    if(kc&&kc.value){ CFG=kc.value; applyTheme(CFG.theme||'verde'); if($("storeName"))$("storeName").value=CFG.store||""; }
+    await loadFiados();
     renderAll();
     if(rows.length) toast("Inventario actualizado ✓ ("+P.filter(x=>!x.archived).length+" productos)");
   }catch(e){ toast("No se pudo actualizar."); }
 }
 async function syncOnFocus(){
   if(!(sbOn&&SB)) return;
-  try{ await loadProductos(); V=await load('ventas',V); S=await load('salidas',S); CFG=await load('config',CFG); applyTheme(CFG.theme||'verde'); renderAll(); }catch(e){}
+  try{ await loadProductos(); V=await load('ventas',V); S=await load('salidas',S); CFG=await load('config',CFG); await loadFiados(); applyTheme(CFG.theme||'verde'); renderAll(); }catch(e){}
 }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syncOnFocus(); });
 

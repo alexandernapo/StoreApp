@@ -581,9 +581,12 @@ async function pAllFromCloud(){
   if(!(sbOn&&SB)) return null;
   try{ const {data,error}=await SB.from('productos').select('data'); if(error) return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; }
 }
+let _lastLocalSave=0;
 async function saveProductos(){
+  _lastLocalSave=Date.now();
   await lset('productos',P,Date.now());
   if(sbOn&&SB && P.length){ try{ await SB.from('productos').upsert(P.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){ console.warn('save prod',e); } }
+  _lastLocalSave=Date.now();
 }
 async function pDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('productos').delete().eq('id',id); }catch(e){} } }
 async function loadProductos(){
@@ -600,11 +603,11 @@ async function loadProductos(){
   }
   P=await load('productos',SEED);
 }
-let _pt; function debouncedPullProd(){ clearTimeout(_pt); _pt=setTimeout(async()=>{ const rows=await pAllFromCloud(); if(rows){ P=rows; await lset('productos',P,Date.now()); renderAll(); } },600); }
+let _pt; function debouncedPullProd(){ clearTimeout(_pt); _pt=setTimeout(async()=>{ if(Date.now()-_lastLocalSave<3500){ debouncedPullProd(); return; } const rows=await pAllFromCloud(); if(rows){ P=rows; await lset('productos',P,Date.now()); renderAll(); } },700); }
 
 /* ===== Fiados (cuentas por cobrar) en la nube ===== */
 async function fAllFromCloud(){ if(!(sbOn&&SB))return null; try{ const {data,error}=await SB.from('fiados').select('data'); if(error)return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; } }
-async function saveFiados(){ await lset('fiados',F,Date.now()); if(sbOn&&SB&&F.length){ try{ await SB.from('fiados').upsert(F.map(c=>({id:c.id,data:c,updated_at:new Date().toISOString()}))); }catch(e){} } }
+async function saveFiados(){ _lastLocalSave=Date.now(); await lset('fiados',F,Date.now()); if(sbOn&&SB&&F.length){ try{ await SB.from('fiados').upsert(F.map(c=>({id:c.id,data:c,updated_at:new Date().toISOString()}))); }catch(e){} } _lastLocalSave=Date.now(); }
 async function fDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('fiados').delete().eq('id',id); }catch(e){} } }
 async function loadFiados(){
   if(sbOn&&SB){ const rows=await fAllFromCloud(); if(rows!==null){
@@ -613,7 +616,7 @@ async function loadFiados(){
       F=[]; return; } }
   const lc=await lget('fiados'); F=(lc&&Array.isArray(lc.value))?lc.value:[];
 }
-let _ft; function debouncedPullFiados(){ clearTimeout(_ft); _ft=setTimeout(async()=>{ const rows=await fAllFromCloud(); if(rows){ F=rows; await lset('fiados',F,Date.now()); renderFiados(); } },600); }
+let _ft; function debouncedPullFiados(){ clearTimeout(_ft); _ft=setTimeout(async()=>{ if(Date.now()-_lastLocalSave<3500){ debouncedPullFiados(); return; } const rows=await fAllFromCloud(); if(rows){ F=rows; await lset('fiados',F,Date.now()); renderFiados(); } },700); }
 
 async function boot(){
   await initCloudFromSaved();

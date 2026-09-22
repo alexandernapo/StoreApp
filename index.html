@@ -582,53 +582,61 @@ async function pAllFromCloud(){
   try{ const {data,error}=await SB.from('productos').select('data'); if(error) return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; }
 }
 let _lastLocalSave=0;
+function mergeById(baseArr, incoming){
+  const byId={}; (baseArr||[]).forEach(p=>{ if(p&&p.id) byId[p.id]=p; });
+  (incoming||[]).forEach(c=>{ if(!c||!c.id)return; const cur=byId[c.id]; if(!cur || (c._ts||0) > (cur._ts||0)) byId[c.id]=c; });
+  return Object.values(byId);
+}
 async function saveProductos(){
-  _lastLocalSave=Date.now();
-  await lset('productos',P,Date.now());
+  _lastLocalSave=Date.now(); const now=Date.now(); P.forEach(p=>{ if(!p._ts) p._ts=now; });
+  await lset('productos',P,now);
   if(sbOn&&SB && P.length){ try{ await SB.from('productos').upsert(P.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){ console.warn('save prod',e); } }
   _lastLocalSave=Date.now();
 }
 async function saveOneProduct(p){
-  _lastLocalSave=Date.now();
+  _lastLocalSave=Date.now(); if(p) p._ts=Date.now();
   await lset('productos',P,Date.now());
   if(p && sbOn&&SB){ try{ const {error}=await SB.from('productos').upsert({id:p.id,data:p,updated_at:new Date().toISOString()}); if(error) toast("No se guardó en la nube (revisa internet)"); }catch(e){ toast("Guardado local (sin conexión)"); } }
   _lastLocalSave=Date.now();
 }
 async function saveManyProducts(arr){
-  _lastLocalSave=Date.now();
-  await lset('productos',P,Date.now());
+  _lastLocalSave=Date.now(); const now=Date.now(); (arr||[]).forEach(p=>{ if(p) p._ts=now; });
+  await lset('productos',P,now);
   if(sbOn&&SB && arr && arr.length){ try{ await SB.from('productos').upsert(arr.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){} }
   _lastLocalSave=Date.now();
 }
 async function pDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('productos').delete().eq('id',id); }catch(e){} } }
 async function loadProductos(){
+  const lc=await lget('productos'); const localArr=(lc&&Array.isArray(lc.value))?lc.value:[];
   if(sbOn&&SB){
     const rows=await pAllFromCloud();
     if(rows!==null){
-      if(rows.length){ P=rows; await lset('productos',P,Date.now()); return; }
-      let old=null;
-      const lc=await lget('productos'); if(lc&&Array.isArray(lc.value)&&lc.value.length) old=lc.value;
-      if(!old){ const cc=await cget('productos'); if(cc&&Array.isArray(cc.value)&&cc.value.length) old=cc.value; }
-      if(old){ P=old; await saveProductos(); return; }
-      P=SEED.map(x=>({...x,id:uid()})); await saveProductos(); return;
+      if(rows.length || localArr.length){
+        P=mergeById(localArr, rows); await lset('productos',P,Date.now());
+        if(!rows.length && localArr.length) await saveProductos();
+        return;
+      }
+      P=SEED.map(x=>({...x,id:uid(),_ts:Date.now()})); await saveProductos(); return;
     }
   }
-  P=await load('productos',SEED);
+  P = localArr.length? localArr : SEED.map(x=>({...x,id:uid(),_ts:Date.now()}));
+  if(!localArr.length) await lset('productos',P,Date.now());
 }
-let _pt; function debouncedPullProd(){ clearTimeout(_pt); _pt=setTimeout(async()=>{ if(Date.now()-_lastLocalSave<3500){ debouncedPullProd(); return; } const rows=await pAllFromCloud(); if(rows){ P=rows; await lset('productos',P,Date.now()); renderAll(); } },700); }
+let _pt; function debouncedPullProd(){ clearTimeout(_pt); _pt=setTimeout(async()=>{ const rows=await pAllFromCloud(); if(rows){ P=mergeById(P, rows); await lset('productos',P,Date.now()); renderAll(); } },700); }
 
 /* ===== Fiados (cuentas por cobrar) en la nube ===== */
 async function fAllFromCloud(){ if(!(sbOn&&SB))return null; try{ const {data,error}=await SB.from('fiados').select('data'); if(error)return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; } }
-async function saveFiados(){ _lastLocalSave=Date.now(); await lset('fiados',F,Date.now()); if(sbOn&&SB&&F.length){ try{ await SB.from('fiados').upsert(F.map(c=>({id:c.id,data:c,updated_at:new Date().toISOString()}))); }catch(e){} } _lastLocalSave=Date.now(); }
+async function saveFiados(){ _lastLocalSave=Date.now(); const now=Date.now(); F.forEach(c=>{ c._ts=now; }); await lset('fiados',F,now); if(sbOn&&SB&&F.length){ try{ await SB.from('fiados').upsert(F.map(c=>({id:c.id,data:c,updated_at:new Date().toISOString()}))); }catch(e){} } _lastLocalSave=Date.now(); }
 async function fDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('fiados').delete().eq('id',id); }catch(e){} } }
 async function loadFiados(){
+  const lc=await lget('fiados'); const localArr=(lc&&Array.isArray(lc.value))?lc.value:[];
   if(sbOn&&SB){ const rows=await fAllFromCloud(); if(rows!==null){
-      if(rows.length){ F=rows; await lset('fiados',F,Date.now()); return; }
-      const lc=await lget('fiados'); if(lc&&Array.isArray(lc.value)&&lc.value.length){ F=lc.value; await saveFiados(); return; }
-      F=[]; return; } }
-  const lc=await lget('fiados'); F=(lc&&Array.isArray(lc.value))?lc.value:[];
+      F=mergeById(localArr, rows); await lset('fiados',F,Date.now());
+      if(!rows.length && localArr.length) await saveFiados();
+      return; } }
+  F=localArr;
 }
-let _ft; function debouncedPullFiados(){ clearTimeout(_ft); _ft=setTimeout(async()=>{ if(Date.now()-_lastLocalSave<3500){ debouncedPullFiados(); return; } const rows=await fAllFromCloud(); if(rows){ F=rows; await lset('fiados',F,Date.now()); renderFiados(); } },700); }
+let _ft; function debouncedPullFiados(){ clearTimeout(_ft); _ft=setTimeout(async()=>{ const rows=await fAllFromCloud(); if(rows){ F=mergeById(F, rows); await lset('fiados',F,Date.now()); renderFiados(); } },700); }
 
 async function boot(){
   await initCloudFromSaved();
@@ -1638,7 +1646,7 @@ async function refreshFromCloud(){
   try{
     const rows=await pAllFromCloud();
     if(rows===null){ toast("No se pudo leer la nube (revisa internet)."); return; }
-    if(rows.length){ P=rows; await lset('productos',P,Date.now()); }
+    if(rows.length){ P=mergeById(P, rows); await lset('productos',P,Date.now()); }
     else { toast("La nube aún no tiene inventario guardado."); }
     const kv=await cget('ventas');    if(kv&&kv.value){ V=kv.value;   await lset('ventas',V,kv.ts||Date.now()); }
     const ks=await cget('salidas');   if(ks&&ks.value){ S=ks.value;   await lset('salidas',S,ks.ts||Date.now()); }

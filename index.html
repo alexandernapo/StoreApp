@@ -588,6 +588,18 @@ async function saveProductos(){
   if(sbOn&&SB && P.length){ try{ await SB.from('productos').upsert(P.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){ console.warn('save prod',e); } }
   _lastLocalSave=Date.now();
 }
+async function saveOneProduct(p){
+  _lastLocalSave=Date.now();
+  await lset('productos',P,Date.now());
+  if(p && sbOn&&SB){ try{ const {error}=await SB.from('productos').upsert({id:p.id,data:p,updated_at:new Date().toISOString()}); if(error) toast("No se guardó en la nube (revisa internet)"); }catch(e){ toast("Guardado local (sin conexión)"); } }
+  _lastLocalSave=Date.now();
+}
+async function saveManyProducts(arr){
+  _lastLocalSave=Date.now();
+  await lset('productos',P,Date.now());
+  if(sbOn&&SB && arr && arr.length){ try{ await SB.from('productos').upsert(arr.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){} }
+  _lastLocalSave=Date.now();
+}
 async function pDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('productos').delete().eq('id',id); }catch(e){} } }
 async function loadProductos(){
   if(sbOn&&SB){
@@ -745,9 +757,10 @@ async function cobrar(){
 }
 async function finalizeSale(fiadoId){
   const t=total();
-  cart.forEach(l=>{ const p=P.find(x=>x.id===l.id); if(p) p.stock=Math.max(0,p.stock-l.qty); });
+  const sold=[];
+  cart.forEach(l=>{ const p=P.find(x=>x.id===l.id); if(p){ p.stock=Math.max(0,p.stock-l.qty); sold.push(p); } });
   V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category})),total:t,pago,fiadoId:fiadoId||null});
-  await saveProductos(); await sSet("ventas",V);
+  await saveManyProducts(sold); await sSet("ventas",V);
   if(pago==="fiado" && fiadoId){ await addCargoFiado(fiadoId,t,"Venta fiada"); }
   cart=[]; $("recibi").value=""; renderCart(); renderInv(); updateHoy();
   toast(pago==="fiado"?("Fiado registrado · "+money(t)):("Venta cobrada · "+money(t))); $("scan").focus();
@@ -845,14 +858,14 @@ async function saveProd(id){
     stock:+$("f_stock").value||0, minStock:+$("f_min").value||0, quick:$("f_quick").checked };
   if(!o.name){toast("Ponle un nombre al producto");return;}
   if(o.barcode){ const dup=P.find(x=>x.barcode&&x.barcode===o.barcode&&x.id!==id); if(dup){ toast("Ese código ya está registrado en: "+dup.name); return; } }
-  if(id){ Object.assign(P.find(x=>x.id===id),o); } else { P.push({id:uid(),...o}); }
-  await saveProductos(); if(o.barcode) cbPut(o.barcode,o.name,o.category); closeModal(); renderAll(); toast("Producto guardado");
+  let prod; if(id){ prod=P.find(x=>x.id===id); Object.assign(prod,o); } else { prod={id:uid(),...o}; P.push(prod); }
+  await saveOneProduct(prod); if(o.barcode) cbPut(o.barcode,o.name,o.category); closeModal(); renderAll(); toast("Producto guardado");
 }
-async function delProd(id){ P=P.filter(x=>x.id!==id); await saveProductos(); pDeleteRow(id); closeModal(); renderAll(); toast("Producto eliminado"); }
+async function delProd(id){ P=P.filter(x=>x.id!==id); await lset('productos',P,Date.now()); pDeleteRow(id); closeModal(); renderAll(); toast("Producto eliminado"); }
 async function toggleArchive(id){
   const p=P.find(x=>x.id===id); if(!p) return;
   p.archived=!p.archived;
-  await saveProductos(); closeModal(); renderAll();
+  await saveOneProduct(p); closeModal(); renderAll();
   toast(p.archived?"Producto archivado 📦":"Producto reactivado ↩");
 }
 
@@ -885,7 +898,7 @@ async function saveCompra(){
   const p=P.find(x=>x.id===id);
   if(tot>0) p.cost=Math.round((tot/qty)*100)/100;
   p.stock+=qty;
-  await saveProductos(); closeModal(); renderAll(); toast(`+${qty} de ${p.name}`);
+  await saveOneProduct(p); closeModal(); renderAll(); toast(`+${qty} de ${p.name}`);
 }
 
 /* ---- Inventario rápido ---- */
@@ -909,9 +922,10 @@ function openRapido(){
 async function saveRapido(){
   const nm=$("r_nm").value.trim(); if(!nm){toast("Falta el nombre");return;}
   CFG.rapidoSec=$("r_sec").value.trim(); await sSet("config",CFG);
-  P.push({id:uid(),barcode:$("r_bc").value.trim(),name:nm,category:$("r_cat").value,
-    location:CFG.rapidoSec,cost:0,price:+$("r_price").value||0,stock:+$("r_qty").value||0,minStock:3,quick:false});
-  await saveProductos(); renderAll();
+  const nuevo={id:uid(),barcode:$("r_bc").value.trim(),name:nm,category:$("r_cat").value,
+    location:CFG.rapidoSec,cost:0,price:+$("r_price").value||0,stock:+$("r_qty").value||0,minStock:3,quick:false};
+  P.push(nuevo);
+  await saveOneProduct(nuevo); renderAll();
   ["r_bc","r_nm","r_qty","r_price"].forEach(i=>$(i).value="");
   $("r_count").textContent=`✔ ${P.length} productos en total`;
   toast(nm+" agregado"); $("r_bc").focus();
@@ -1355,7 +1369,7 @@ function addByCodeCaja(code){
   let p=P.find(x=>x.barcode&&x.barcode===q);
   if(!p){ const m=P.filter(x=>x.name.toLowerCase()===q.toLowerCase()); if(m.length===1)p=m[0]; }
   if(!p){ camFlash("⚠ No registrado — agrégalo en Inventario", false); return; }
-  if(p.archived){ p.archived=false; saveProductos(); renderInv(); renderQuick(); toast("↩ Reactivado: "+p.name); }
+  if(p.archived){ p.archived=false; saveOneProduct(p); renderInv(); renderQuick(); toast("↩ Reactivado: "+p.name); }
   if(p.stock<=0){ camFlash("⚠ Sin stock: "+p.name, false); return; }
   const l=cart.find(x=>x.id===p.id), enC=l?l.qty:0;
   if(enC>=p.stock){ camFlash("⚠ Solo hay "+p.stock+" de "+p.name, false); return; }
@@ -1636,6 +1650,7 @@ async function refreshFromCloud(){
 }
 async function syncOnFocus(){
   if(!(sbOn&&SB)) return;
+  if(Date.now()-_lastLocalSave<4000) return;   // no pisar un cambio recién hecho
   try{ await loadProductos(); V=await load('ventas',V); S=await load('salidas',S); CFG=await load('config',CFG); await loadFiados(); applyTheme(CFG.theme||'verde'); renderAll(); }catch(e){}
 }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') syncOnFocus(); });

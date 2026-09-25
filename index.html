@@ -775,15 +775,42 @@ async function adminCatalog(){
   window._cat=rows;
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📚 Catálogo (${rows.length})</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
+    <button class="save" onclick="adminCatForm('')">➕ Agregar producto al catálogo</button>
     <input id="catSearch" placeholder="Buscar…" oninput="adminCatFilter()" style="margin:10px 0">
-    <div class="card" id="catList" style="padding:2px 4px;max-height:60vh;overflow:auto"></div>
+    <div class="card" id="catList" style="padding:2px 4px;max-height:56vh;overflow:auto"></div>
+    <p class="muted" style="font-size:12px">Toca un producto para editarlo o eliminarlo.</p>
    </div>`;
   adminCatFilter();
 }
 function adminCatFilter(){
   const q=(($("catSearch")&&$("catSearch").value)||'').trim().toLowerCase();
   const rows=(window._cat||[]).filter(r=>!q||(r.name||'').toLowerCase().includes(q)||(r.barcode||'').includes(q)).slice(0,400);
-  $("catList").innerHTML=rows.length? rows.map(r=>`<div class="rowline"><span>${EMOJI[r.category]||'📦'} ${r.name||'(sin nombre)'}<br><span class="muted" style="font-size:11px">${r.barcode||''} · ${r.category||''}</span></span></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin resultados.</div>';
+  $("catList").innerHTML=rows.length? rows.map(r=>`<div class="rowline" style="cursor:pointer" onclick="adminCatForm('${(r.barcode||'').replace(/'/g,'')}')"><span>${EMOJI[r.category]||'📦'} ${r.name||'(sin nombre)'}<br><span class="muted" style="font-size:11px">${r.barcode||''} · ${r.category||''}</span></span><span class="muted">✏️</span></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin resultados.</div>';
+}
+function adminCatForm(barcode){
+  const item=barcode? (window._cat||[]).find(r=>r.barcode===barcode):null;
+  $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${item?'Editar producto':'Agregar al catálogo'}</h2><button class="ghost" style="width:auto;margin:0" onclick="adminCatalog()">Volver</button></div>
+    <div class="field"><label>Código de barras</label><input id="ac_bc" value="${item?item.barcode:''}" placeholder="Escríbelo o escanéalo"></div>
+    <div class="field"><label>Nombre</label><input id="ac_nm" value="${item?(item.name||'').replace(/"/g,'&quot;'):''}"></div>
+    <div class="field"><label>Categoría</label><select id="ac_cat">${catOptions(item?item.category:'Otros')}</select></div>
+    <button class="save" onclick="saveCatForm('${item?item.barcode:''}')">Guardar</button>
+    ${item?`<button class="ghost" style="color:var(--bad)" onclick="deleteCatItem('${item.barcode}')">Eliminar del catálogo</button>`:''}
+   </div>`;
+}
+async function saveCatForm(orig){
+  const bc=($("ac_bc").value||'').trim(), nm=($("ac_nm").value||'').trim(), cat=$("ac_cat").value;
+  if(!bc) return toast("Falta el código de barras");
+  if(!nm) return toast("Falta el nombre");
+  try{
+    await SB.from('catalogo').upsert({barcode:bc,name:nm,category:cat,updated_at:new Date().toISOString()});
+    if(orig && orig!==bc){ await SB.from('catalogo').delete().eq('barcode',orig); }
+    toast("Catálogo guardado ✓"); adminCatalog();
+  }catch(e){ toast("No se pudo guardar"); }
+}
+async function deleteCatItem(bc){
+  if(!confirm("¿Eliminar "+bc+" del catálogo compartido?"))return;
+  try{ await SB.from('catalogo').delete().eq('barcode',bc); toast("Eliminado del catálogo"); adminCatalog(); }catch(e){ toast("No se pudo"); }
 }
 async function migrarDatos(){
   if(!(sbOn&&SB)||!TIENDA) return toast("Inicia sesión en una tienda");

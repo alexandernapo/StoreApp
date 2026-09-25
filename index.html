@@ -203,6 +203,12 @@
   .lstat .d{width:9px;height:9px;border-radius:50%;background:currentColor}
   @keyframes flash{0%{background:var(--ok)}100%{background:var(--brand)}}
   header.pulse{animation:flash .5s ease-out}
+  #login{position:fixed;inset:0;z-index:520;background:linear-gradient(160deg,#0E6E4E,#0A5138);display:none;align-items:center;justify-content:center;padding:24px}
+  .loginbox{background:var(--card);border-radius:20px;padding:24px 20px;width:100%;max-width:360px;text-align:center;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+  .loginbox h2{margin:0;color:var(--ink)}
+  .loginbox .muted{color:var(--muted);font-size:13px;margin:0 0 4px}
+  .loginbox input{width:100%;padding:13px;border:1px solid var(--line);border-radius:11px;background:var(--surface);font-size:16px;color:var(--ink)}
+  .loginbox .save,.loginbox .ghost{width:100%;margin:0}
   .periodTabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:5px;margin-bottom:12px}
   .periodTabs button{flex:1;padding:9px;border-radius:9px;font-weight:700;color:var(--muted);font-size:14px}
   .periodTabs button.on{background:var(--brand);color:#fff}
@@ -297,6 +303,8 @@
   <div class="tag">Caja e inventario</div>
   <div class="loader"><span>🥤</span><span>🍞</span><span>🥚</span><span>🧀</span></div>
 </div>
+
+<div id="login"><div class="loginbox" id="loginInner"></div></div>
 
 <header>
   <div class="store">
@@ -488,6 +496,9 @@ let cart=[], pago="efectivo";
 let SB=null, sbOn=false;
 let F=[];
 let _editingId=null;
+let TIENDA=null, DEV=false;
+function pk(k){ return (TIENDA? TIENDA+'::' : '') + k; }
+const DEV_CODE="admin";
 const SB_URL="https://inldqynhwmmkglqeplje.supabase.co";
 const SB_KEY="sb_publishable_4JXQBAHlF-kzM_2u6P9WRw_gxspo9nq";
 const $=id=>document.getElementById(id);
@@ -506,6 +517,7 @@ function idbSet(k,v){return idbOpen().then(db=>new Promise((res,rej)=>{const tx=
 
 /* Local con marca de tiempo — formato {__v, __t}; compatible con datos viejos */
 async function lget(k){
+  k=pk(k);
   try{
     let raw=null;
     if(window.indexedDB) raw=await idbGet(k); else raw=localStorage.getItem(k);
@@ -516,6 +528,7 @@ async function lget(k){
   }catch(e){ return null; }
 }
 async function lset(k,value,ts){
+  k=pk(k);
   const raw=JSON.stringify({__v:value,__t:ts});
   try{ if(window.indexedDB) await idbSet(k,raw); else localStorage.setItem(k,raw); }
   catch(e){ try{ localStorage.setItem(k,raw); }catch(_){ } }
@@ -523,7 +536,7 @@ async function lset(k,value,ts){
 /* Nube (Supabase): {value,ts} | null (vacío) | undefined (sin conexión/error) */
 async function cget(k){
   if(!(sbOn&&SB)) return undefined;
-  try{ const {data,error}=await SB.from('kv').select('value,updated_at').eq('key',k).maybeSingle();
+  try{ const {data,error}=await SB.from('kv').select('value,updated_at').eq('key',pk(k)).maybeSingle();
     if(error) return undefined;
     if(!data) return null;
     return {value:data.value, ts:data.updated_at?Date.parse(data.updated_at):0};
@@ -531,7 +544,7 @@ async function cget(k){
 }
 async function cset(k,value,ts){
   if(!(sbOn&&SB)) return false;
-  try{ const {error}=await SB.from('kv').upsert({key:k,value:value,updated_at:new Date(ts).toISOString()}); return !error; }
+  try{ const {error}=await SB.from('kv').upsert({key:pk(k),value:value,updated_at:new Date(ts).toISOString()}); return !error; }
   catch(e){ return false; }
 }
 /* Guardar: escribe local y nube con la MISMA marca de tiempo */
@@ -579,7 +592,7 @@ async function load(k,seed){
 /* ===== Inventario fila por fila en la nube (tabla productos) ===== */
 async function pAllFromCloud(){
   if(!(sbOn&&SB)) return null;
-  try{ const {data,error}=await SB.from('productos').select('data'); if(error) return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; }
+  try{ const {data,error}=await SB.from('productos').select('data').eq('tienda',TIENDA); if(error) return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; }
 }
 let _lastLocalSave=0;
 function mergeById(baseArr, incoming){
@@ -590,19 +603,19 @@ function mergeById(baseArr, incoming){
 async function saveProductos(){
   _lastLocalSave=Date.now(); const now=Date.now(); P.forEach(p=>{ if(!p._ts) p._ts=now; });
   await lset('productos',P,now);
-  if(sbOn&&SB && P.length){ try{ await SB.from('productos').upsert(P.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){ console.warn('save prod',e); } }
+  if(sbOn&&SB && P.length){ try{ await SB.from('productos').upsert(P.map(p=>({id:p.id,tienda:TIENDA,data:p,updated_at:new Date().toISOString()}))); }catch(e){ console.warn('save prod',e); } }
   _lastLocalSave=Date.now();
 }
 async function saveOneProduct(p){
   _lastLocalSave=Date.now(); if(p) p._ts=Date.now();
   await lset('productos',P,Date.now());
-  if(p && sbOn&&SB){ try{ const {error}=await SB.from('productos').upsert({id:p.id,data:p,updated_at:new Date().toISOString()}); if(error) toast("No se guardó en la nube (revisa internet)"); }catch(e){ toast("Guardado local (sin conexión)"); } }
+  if(p && sbOn&&SB){ try{ const {error}=await SB.from('productos').upsert({id:p.id,tienda:TIENDA,data:p,updated_at:new Date().toISOString()}); if(error) toast("No se guardó en la nube (revisa internet)"); }catch(e){ toast("Guardado local (sin conexión)"); } }
   _lastLocalSave=Date.now();
 }
 async function saveManyProducts(arr){
   _lastLocalSave=Date.now(); const now=Date.now(); (arr||[]).forEach(p=>{ if(p) p._ts=now; });
   await lset('productos',P,now);
-  if(sbOn&&SB && arr && arr.length){ try{ await SB.from('productos').upsert(arr.map(p=>({id:p.id,data:p,updated_at:new Date().toISOString()}))); }catch(e){} }
+  if(sbOn&&SB && arr && arr.length){ try{ await SB.from('productos').upsert(arr.map(p=>({id:p.id,tienda:TIENDA,data:p,updated_at:new Date().toISOString()}))); }catch(e){} }
   _lastLocalSave=Date.now();
 }
 async function pDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('productos').delete().eq('id',id); }catch(e){} } }
@@ -616,17 +629,17 @@ async function loadProductos(){
         if(!rows.length && localArr.length) await saveProductos();
         return;
       }
-      P=SEED.map(x=>({...x,id:uid(),_ts:Date.now()})); await saveProductos(); return;
+      P=[]; await lset('productos',P,Date.now()); return;
     }
   }
-  P = localArr.length? localArr : SEED.map(x=>({...x,id:uid(),_ts:Date.now()}));
-  if(!localArr.length) await lset('productos',P,Date.now());
+  P = localArr.length? localArr : [];
+  await lset('productos',P,Date.now());
 }
 let _pt; function debouncedPullProd(){ clearTimeout(_pt); _pt=setTimeout(async()=>{ const rows=await pAllFromCloud(); if(rows){ P=mergeById(P, rows); await lset('productos',P,Date.now()); renderAll(); } },700); }
 
 /* ===== Fiados (cuentas por cobrar) en la nube ===== */
-async function fAllFromCloud(){ if(!(sbOn&&SB))return null; try{ const {data,error}=await SB.from('fiados').select('data'); if(error)return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; } }
-async function saveFiados(){ _lastLocalSave=Date.now(); const now=Date.now(); F.forEach(c=>{ c._ts=now; }); await lset('fiados',F,now); if(sbOn&&SB&&F.length){ try{ await SB.from('fiados').upsert(F.map(c=>({id:c.id,data:c,updated_at:new Date().toISOString()}))); }catch(e){} } _lastLocalSave=Date.now(); }
+async function fAllFromCloud(){ if(!(sbOn&&SB))return null; try{ const {data,error}=await SB.from('fiados').select('data').eq('tienda',TIENDA); if(error)return null; return (data||[]).map(r=>r.data).filter(Boolean); }catch(e){ return null; } }
+async function saveFiados(){ _lastLocalSave=Date.now(); const now=Date.now(); F.forEach(c=>{ c._ts=now; }); await lset('fiados',F,now); if(sbOn&&SB&&F.length){ try{ await SB.from('fiados').upsert(F.map(c=>({id:c.id,tienda:TIENDA,data:c,updated_at:new Date().toISOString()}))); }catch(e){} } _lastLocalSave=Date.now(); }
 async function fDeleteRow(id){ if(sbOn&&SB){ try{ await SB.from('fiados').delete().eq('id',id); }catch(e){} } }
 async function loadFiados(){
   const lc=await lget('fiados'); const localArr=(lc&&Array.isArray(lc.value))?lc.value:[];
@@ -638,8 +651,16 @@ async function loadFiados(){
 }
 let _ft; function debouncedPullFiados(){ clearTimeout(_ft); _ft=setTimeout(async()=>{ const rows=await fAllFromCloud(); if(rows){ F=mergeById(F, rows); await lset('fiados',F,Date.now()); renderFiados(); } },700); }
 
-async function boot(){
-  await initCloudFromSaved();
+async function boot(){ await initCloudFromSaved(); gate(); }
+async function gate(){
+  const s=getSess();
+  if(s && s.code){
+    if(!sbOn){ TIENDA = s.code===DEV_CODE ? (s.tienda||null) : s.code; if(TIENDA){ hideLogin(); startApp(); return; } }
+    else { const r=await validateLogin(s.code,s.pin); if(r){ if(r.dev){ showDevPicker(); return; } TIENDA=s.code; hideLogin(); startApp(); return; } }
+  }
+  showLogin();
+}
+async function startApp(){
   await loadProductos();
   await loadFiados();
   V=await load("ventas",[]);
@@ -650,12 +671,96 @@ async function boot(){
   { const sn=$("splashName"); if(sn) sn.textContent=CFG.store||"Mi Tienda"; }
   $("storeName").oninput=e=>{CFG.store=e.target.value;sSet("config",CFG);};
   await loadCart();
-  renderAll();
-  autoLink();
-  setTimeout(hideSplash,1500);
-  if(new URLSearchParams(location.search).get('camara')){ nav('caja'); setTimeout(()=>scanCaja(), 1650); }
+  renderAll(); autoArchive(); autoLink();
+  hideLogin(); setTimeout(hideSplash,500);
+  if(new URLSearchParams(location.search).get('camara')){ nav('caja'); setTimeout(()=>scanCaja(), 800); }
+}
+/* ---- Sesión / login por tienda ---- */
+function getSess(){ try{ return JSON.parse(localStorage.getItem('sess')||'null'); }catch(e){ return null; } }
+function setSess(s){ try{ localStorage.setItem('sess',JSON.stringify(s)); }catch(e){} }
+function logout(){ try{ localStorage.removeItem('sess'); }catch(e){} location.reload(); }
+async function validateLogin(code,pin){
+  code=(code||'').trim().toLowerCase(); pin=(pin||'').trim();
+  if(!(sbOn&&SB)) return null;
+  try{ const {data}=await SB.from('tiendas').select('code,pin,name').eq('code',code).maybeSingle();
+    if(data && String(data.pin)===pin) return {code:data.code,name:data.name,dev:code===DEV_CODE}; }catch(e){}
+  return null;
+}
+function showLogin(msg){
+  hideSplash(); const el=$("login"); el.style.display='flex';
+  $("loginInner").innerHTML=`<div style="font-size:52px">🏪</div><h2 style="margin:4px 0">Mi Tienda</h2>
+   <p class="muted">Ingresa con el código de tu tienda</p>
+   <input id="lg_code" placeholder="Código de tienda" autocomplete="off" style="text-transform:lowercase">
+   <input id="lg_pin" type="password" inputmode="numeric" placeholder="PIN">
+   <button class="save" onclick="doLogin()">Entrar</button>
+   <button class="ghost" onclick="showCreate()">Crear tienda nueva</button>
+   ${msg?`<div style="color:var(--bad);font-weight:700">${msg}</div>`:''}`;
+}
+function hideLogin(){ const el=$("login"); if(el) el.style.display='none'; }
+async function doLogin(){
+  const code=($("lg_code").value||'').trim().toLowerCase(), pin=($("lg_pin").value||'').trim();
+  if(!code||!pin) return showLogin("Completa código y PIN");
+  if(!sbOn) return showLogin("Sin conexión a internet");
+  const r=await validateLogin(code,pin);
+  if(!r) return showLogin("Código o PIN incorrecto");
+  setSess({code,pin,dev:!!r.dev});
+  if(r.dev){ showDevPicker(); return; }
+  TIENDA=code; hideLogin(); startApp();
+}
+let _createDev=false;
+function showCreate(dev){ _createDev=!!dev;
+  $("loginInner").innerHTML=`<div style="font-size:44px">🏪</div><h2 style="margin:4px 0 6px">Crear tienda</h2>
+   <input id="cr_code" placeholder="Código (ej. rosita)" style="text-transform:lowercase" autocomplete="off">
+   <input id="cr_name" placeholder="Nombre de la tienda">
+   <input id="cr_pin" type="password" inputmode="numeric" placeholder="PIN">
+   <button class="save" onclick="doCreate()">${dev?'Crear tienda':'Crear y entrar'}</button>
+   <button class="ghost" onclick="${dev?'showDevPicker()':'showLogin()'}">Volver</button>`;
+}
+async function doCreate(){
+  const code=($("cr_code").value||'').trim().toLowerCase(), name=($("cr_name").value||'').trim(), pin=($("cr_pin").value||'').trim();
+  if(!code||!pin) return toast("Código y PIN obligatorios");
+  if(!sbOn) return toast("Sin conexión a la nube");
+  try{ const {data:ex}=await SB.from('tiendas').select('code').eq('code',code).maybeSingle();
+    if(ex) return toast("Ese código ya existe, elige otro");
+    await SB.from('tiendas').insert({code,pin,name});
+    if(_createDev){ toast("Tienda creada: "+name+" ("+code+")"); showDevPicker(); return; }
+    setSess({code,pin,dev:code===DEV_CODE}); TIENDA=code; hideLogin(); startApp();
+  }catch(e){ toast("No se pudo crear la tienda"); }
+}
+async function showDevPicker(){
+  hideSplash(); const el=$("login"); el.style.display='flex';
+  let rows=[]; try{ const {data}=await SB.from('tiendas').select('code,name'); rows=data||[]; }catch(e){}
+  $("loginInner").innerHTML=`<div style="font-size:44px">🛠️</div><h2 style="margin:4px 0">Modo desarrollador</h2>
+   <p class="muted">Elige una tienda para administrar</p>
+   <div style="max-height:42vh;overflow:auto;width:100%;display:flex;flex-direction:column;gap:6px">
+   ${rows.filter(r=>r.code!==DEV_CODE).map(r=>`<button class="ghost" style="text-align:left" onclick="devEnter('${r.code}')">🏪 ${r.name||r.code} <span class="muted">(${r.code})</span></button>`).join('')||'<p class="muted">Aún no hay tiendas.</p>'}</div>
+   <button class="ghost" onclick="showCreate(true)">➕ Crear tienda</button>
+   <button class="ghost" onclick="logout()">Cerrar sesión</button>`;
+}
+function devEnter(code){ TIENDA=code; DEV=true; const s=getSess()||{}; s.tienda=code; setSess(s); hideLogin(); startApp(); }
+async function migrarDatos(){
+  if(!(sbOn&&SB)||!TIENDA) return toast("Inicia sesión en una tienda");
+  if(!confirm("Asignar a la tienda \""+TIENDA+"\" todos los productos, fiados y ventas que aún NO tienen tienda. ¿Continuar?"))return;
+  try{
+    await SB.from('productos').update({tienda:TIENDA}).is('tienda',null);
+    await SB.from('fiados').update({tienda:TIENDA}).is('tienda',null);
+    const {data}=await SB.from('kv').select('key,value,updated_at').in('key',['ventas','salidas','config']);
+    if(data) for(const r of data){ await SB.from('kv').upsert({key:TIENDA+'::'+r.key,value:r.value,updated_at:r.updated_at}); }
+    await loadProductos(); await loadFiados(); V=await load('ventas',[]); S=await load('salidas',[]); renderAll();
+    closeModal(); toast("Datos antiguos migrados a "+TIENDA+" ✓");
+  }catch(e){ toast("No se pudo migrar."); }
 }
 function hideSplash(){ const s=$("splash"); if(!s)return; s.classList.add("hide"); setTimeout(()=>{ if(s&&s.parentNode) s.parentNode.removeChild(s); },600); }
+function autoArchive(){
+  const now=Date.now(), MS=15*24*60*60*1000, changed=[];
+  P.forEach(p=>{
+    if(p.archived) return;
+    if((p.stock||0)>0){ if(p.zeroSince){ p.zeroSince=null; changed.push(p); } return; }
+    if(!p.zeroSince){ p.zeroSince=now; changed.push(p); }
+    else if(now - p.zeroSince > MS){ p.archived=true; changed.push(p); }
+  });
+  if(changed.length){ saveManyProducts(changed); renderInv(); renderQuick(); }
+}
 function renderAll(){renderQuick();renderCart();renderInv();fillFilters();renderRep();renderFiados();updateHoy();}
 
 /* ================= Estado de stock (semáforo) ================= */
@@ -770,7 +875,7 @@ async function finalizeSale(fiadoId){
   V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category})),total:t,pago,fiadoId:fiadoId||null});
   await saveManyProducts(sold); await sSet("ventas",V);
   if(pago==="fiado" && fiadoId){ await addCargoFiado(fiadoId,t,"Venta fiada"); }
-  cart=[]; $("recibi").value=""; renderCart(); renderInv(); updateHoy();
+  cart=[]; $("recibi").value=""; renderCart(); renderInv(); updateHoy(); autoArchive();
   toast(pago==="fiado"?("Fiado registrado · "+money(t)):("Venta cobrada · "+money(t))); $("scan").focus();
 }
 function chooseFiado(t){
@@ -1099,17 +1204,20 @@ function subscribeCloud(){
     .on('postgres_changes',{event:'*',schema:'public',table:'kv'},p=>{ if(p.new&&p.new.key) applyCloudChange(p.new.key,p.new.value,p.new.updated_at); })
     .subscribe(); }catch(e){}
   try{ SB.channel('prod-'+Math.random().toString(36).slice(2))
-    .on('postgres_changes',{event:'*',schema:'public',table:'productos'},()=>{ debouncedPullProd(); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'productos',filter:'tienda=eq.'+TIENDA},()=>{ debouncedPullProd(); })
     .subscribe(); }catch(e){}
   try{ SB.channel('fia-'+Math.random().toString(36).slice(2))
-    .on('postgres_changes',{event:'*',schema:'public',table:'fiados'},()=>{ debouncedPullFiados(); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'fiados',filter:'tienda=eq.'+TIENDA},()=>{ debouncedPullFiados(); })
     .subscribe(); }catch(e){}
 }
-async function applyCloudChange(k,val,updated_at){
+async function applyCloudChange(fullKey,val,updated_at){
+  const sep=fullKey.indexOf('::'); if(sep<0) return;
+  const tp=fullKey.slice(0,sep), k=fullKey.slice(sep+2);
+  if(tp!==TIENDA) return;                       // otra tienda: ignorar
   if(k!=='ventas'&&k!=='salidas'&&k!=='config') return;
   const ts=updated_at?Date.parse(updated_at):Date.now();
   const loc=await lget(k);
-  if(loc && loc.ts>ts) return;      // lo local es más nuevo: no pisar
+  if(loc && loc.ts>ts) return;
   await lset(k,val,ts);
   if(k==='ventas') V=val||[];
   else if(k==='salidas') S=val||[];
@@ -1152,6 +1260,10 @@ function openCloud(){
    ${sbOn?'<button class="ghost" onclick="importFromCatalog()">📥 Traer productos del catálogo al inventario</button>':''}
    ${sbOn?'<button class="ghost" onclick="contribAll()">📚 Aportar mi inventario al catálogo</button>':''}
    ${sbOn?'<button class="ghost" onclick="pushForce()">⬆️ Subir lo de este aparato a la nube</button>':''}
+   ${sbOn?'<button class="ghost" onclick="migrarDatos()">📦 Migrar datos antiguos (sin tienda) a esta tienda</button>':''}
+   ${DEV?'<button class="ghost" onclick="showDevPicker()">🔀 Cambiar de tienda (dev)</button>':''}
+   <div style="text-align:center;color:var(--muted);font-size:12px;margin-top:6px">Tienda actual: <b>${TIENDA||'—'}</b></div>
+   <button class="ghost" onclick="logout()">🚪 Cerrar sesión</button>
    ${sbOn?'<button class="ghost" onclick="disconnectCloud()">Desconectar (volver a local)</button>':''}`);
 }
 

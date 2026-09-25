@@ -656,7 +656,7 @@ async function gate(){
   const s=getSess();
   if(s && s.code){
     if(!sbOn){ TIENDA = s.code===DEV_CODE ? (s.tienda||null) : s.code; if(TIENDA){ hideLogin(); startApp(); return; } }
-    else { const r=await validateLogin(s.code,s.pin); if(r){ if(r.dev){ showDevPicker(); return; } TIENDA=s.code; hideLogin(); startApp(); return; } }
+    else { const r=await validateLogin(s.code,s.pin); if(r){ if(r.dev){ showAdmin(); return; } if(licenseExpired(r.license)){ showLogin("Licencia vencida. Contacta al administrador."); return; } TIENDA=s.code; hideLogin(); startApp(); return; } }
   }
   showLogin();
 }
@@ -682,12 +682,14 @@ function logout(){ try{ localStorage.removeItem('sess'); }catch(e){} location.re
 async function validateLogin(code,pin){
   code=(code||'').trim().toLowerCase(); pin=(pin||'').trim();
   if(!(sbOn&&SB)) return null;
-  try{ const {data}=await SB.from('tiendas').select('code,pin,name').eq('code',code).maybeSingle();
-    if(data && String(data.pin)===pin) return {code:data.code,name:data.name,dev:code===DEV_CODE}; }catch(e){}
+  try{ const {data}=await SB.from('tiendas').select('code,pin,name,license').eq('code',code).maybeSingle();
+    if(data && String(data.pin)===pin) return {code:data.code,name:data.name,license:data.license,dev:code===DEV_CODE}; }catch(e){}
   return null;
 }
+function licenseExpired(lic){ if(!lic) return false; return todayKey() > String(lic).slice(0,10); }
 function showLogin(msg){
-  hideSplash(); const el=$("login"); el.style.display='flex';
+  hideSplash(); const el=$("login"); el.style.display='flex'; el.style.alignItems='center'; el.style.overflowY='';
+  $("loginInner").style.maxWidth='';
   $("loginInner").innerHTML=`<div style="font-size:52px">🏪</div><h2 style="margin:4px 0">Mi Tienda</h2>
    <p class="muted">Ingresa con el código de tu tienda</p>
    <input id="lg_code" placeholder="Código de tienda" autocomplete="off" style="text-transform:lowercase">
@@ -703,8 +705,9 @@ async function doLogin(){
   if(!sbOn) return showLogin("Sin conexión a internet");
   const r=await validateLogin(code,pin);
   if(!r) return showLogin("Código o PIN incorrecto");
+  if(!r.dev && licenseExpired(r.license)) return showLogin("Licencia vencida. Contacta al administrador.");
   setSess({code,pin,dev:!!r.dev});
-  if(r.dev){ showDevPicker(); return; }
+  if(r.dev){ showAdmin(); return; }
   TIENDA=code; hideLogin(); startApp();
 }
 let _createDev=false;
@@ -714,7 +717,7 @@ function showCreate(dev){ _createDev=!!dev;
    <input id="cr_name" placeholder="Nombre de la tienda">
    <input id="cr_pin" type="password" inputmode="numeric" placeholder="PIN">
    <button class="save" onclick="doCreate()">${dev?'Crear tienda':'Crear y entrar'}</button>
-   <button class="ghost" onclick="${dev?'showDevPicker()':'showLogin()'}">Volver</button>`;
+   <button class="ghost" onclick="${dev?'showAdmin()':'showLogin()'}">Volver</button>`;
 }
 async function doCreate(){
   const code=($("cr_code").value||'').trim().toLowerCase(), name=($("cr_name").value||'').trim(), pin=($("cr_pin").value||'').trim();
@@ -723,21 +726,65 @@ async function doCreate(){
   try{ const {data:ex}=await SB.from('tiendas').select('code').eq('code',code).maybeSingle();
     if(ex) return toast("Ese código ya existe, elige otro");
     await SB.from('tiendas').insert({code,pin,name});
-    if(_createDev){ toast("Tienda creada: "+name+" ("+code+")"); showDevPicker(); return; }
+    if(_createDev){ toast("Tienda creada: "+name+" ("+code+")"); showAdmin(); return; }
     setSess({code,pin,dev:code===DEV_CODE}); TIENDA=code; hideLogin(); startApp();
   }catch(e){ toast("No se pudo crear la tienda"); }
 }
-async function showDevPicker(){
-  hideSplash(); const el=$("login"); el.style.display='flex';
-  let rows=[]; try{ const {data}=await SB.from('tiendas').select('code,name'); rows=data||[]; }catch(e){}
-  $("loginInner").innerHTML=`<div style="font-size:44px">🛠️</div><h2 style="margin:4px 0">Modo desarrollador</h2>
-   <p class="muted">Elige una tienda para administrar</p>
-   <div style="max-height:42vh;overflow:auto;width:100%;display:flex;flex-direction:column;gap:6px">
-   ${rows.filter(r=>r.code!==DEV_CODE).map(r=>`<button class="ghost" style="text-align:left" onclick="devEnter('${r.code}')">🏪 ${r.name||r.code} <span class="muted">(${r.code})</span></button>`).join('')||'<p class="muted">Aún no hay tiendas.</p>'}</div>
-   <button class="ghost" onclick="showCreate(true)">➕ Crear tienda</button>
-   <button class="ghost" onclick="logout()">Cerrar sesión</button>`;
+async function showAdmin(){
+  hideSplash(); const el=$("login"); el.style.display='flex'; el.style.alignItems='flex-start'; el.style.overflowY='auto';
+  $("loginInner").style.maxWidth='520px';
+  let rows=[]; try{ const {data}=await SB.from('tiendas').select('code,name,license'); rows=(data||[]).filter(r=>r.code!==DEV_CODE); }catch(e){}
+  $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">🛠️ Administrador</h2><button class="ghost" style="width:auto;margin:0" onclick="logout()">Salir</button></div>
+   <button class="save" onclick="showCreate(true)">➕ Crear tienda</button>
+   <button class="ghost" onclick="adminCatalog()">📚 Ver catálogo de productos</button>
+   <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">TIENDAS</h2>
+   ${rows.length? rows.map(r=>`<div class="card" style="padding:12px;margin-bottom:10px">
+       <div style="font-weight:800">${r.name||r.code} <span class="muted">(${r.code})</span></div>
+       <div class="muted" style="font-size:12px;margin:2px 0 8px">Licencia: ${r.license? (String(r.license).slice(0,10)+(licenseExpired(r.license)?' ⚠ vencida':'')) : 'sin límite'}</div>
+       <div style="display:flex;gap:6px;flex-wrap:wrap">
+         <button class="ghost" style="width:auto;margin:0" onclick="adminReport('${r.code}')">📊 Reportes</button>
+         <button class="ghost" style="width:auto;margin:0" onclick="adminPin('${r.code}')">🔑 PIN</button>
+         <button class="ghost" style="width:auto;margin:0" onclick="adminLic('${r.code}')">📅 Licencia</button>
+       </div></div>`).join('') : '<p class="muted">Aún no hay tiendas. Crea la primera.</p>'}
+  </div>`;
 }
-function devEnter(code){ TIENDA=code; DEV=true; const s=getSess()||{}; s.tienda=code; setSess(s); hideLogin(); startApp(); }
+async function adminPin(code){ const np=prompt("Nuevo PIN para "+code+":"); if(np==null)return; const pin=np.trim(); if(!pin)return; try{ await SB.from('tiendas').update({pin}).eq('code',code); toast("PIN actualizado"); }catch(e){ toast("No se pudo"); } }
+async function adminLic(code){ const d=prompt("Vencimiento AAAA-MM-DD (vacío = sin límite):"); if(d==null)return; const v=d.trim()||null; try{ await SB.from('tiendas').update({license:v}).eq('code',code); toast("Licencia actualizada"); showAdmin(); }catch(e){ toast("No se pudo"); } }
+async function adminReport(code){
+  toast("Cargando reporte…");
+  let ventas=[], prods=[];
+  try{ const {data}=await SB.from('kv').select('value').eq('key',code+'::ventas').maybeSingle(); ventas=(data&&data.value)||[]; }catch(e){}
+  try{ const {data}=await SB.from('productos').select('data').eq('tienda',code); prods=(data||[]).map(r=>r.data); }catch(e){}
+  const now=new Date(), today=todayKey();
+  const inR=days=>{ const set=new Set(); for(let i=0;i<days;i++){ const d=new Date(now); d.setDate(now.getDate()-i); set.add(dkey(d)); } return ventas.filter(v=>set.has(v.date)); };
+  const sum=a=>a.reduce((s,v)=>s+(v.total||0),0);
+  const dia=sum(ventas.filter(v=>v.date===today)), sem=sum(inR(7)), mes=sum(inR(30));
+  const agg={}; ventas.forEach(v=>(v.items||[]).forEach(it=>{agg[it.name]=(agg[it.name]||0)+it.qty;}));
+  const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 ${code}</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
+    <div class="stats" style="margin-top:10px"><div class="card stat"><span>Hoy</span><b class="num">${money(dia)}</b></div><div class="card stat"><span>Semana</span><b class="num">${money(sem)}</b></div><div class="card stat"><span>Mes</span><b class="num">${money(mes)}</b></div><div class="card stat"><span>Productos</span><b class="num">${prods.filter(p=>!p.archived).length}</b></div></div>
+    <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">TOP PRODUCTOS</h2>
+    <div class="card" style="padding:2px 4px">${top.length? top.map(([n,q])=>`<div class="rowline"><span>${n}</span><b class="num">${q} u</b></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin ventas.</div>'}</div>
+   </div>`;
+}
+async function adminCatalog(){
+  toast("Cargando catálogo…");
+  let rows=[]; try{ let from=0; const page=1000; while(true){ const {data,error}=await SB.from('catalogo').select('barcode,name,category').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
+  window._cat=rows;
+  $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📚 Catálogo (${rows.length})</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
+    <input id="catSearch" placeholder="Buscar…" oninput="adminCatFilter()" style="margin:10px 0">
+    <div class="card" id="catList" style="padding:2px 4px;max-height:60vh;overflow:auto"></div>
+   </div>`;
+  adminCatFilter();
+}
+function adminCatFilter(){
+  const q=(($("catSearch")&&$("catSearch").value)||'').trim().toLowerCase();
+  const rows=(window._cat||[]).filter(r=>!q||(r.name||'').toLowerCase().includes(q)||(r.barcode||'').includes(q)).slice(0,400);
+  $("catList").innerHTML=rows.length? rows.map(r=>`<div class="rowline"><span>${EMOJI[r.category]||'📦'} ${r.name||'(sin nombre)'}<br><span class="muted" style="font-size:11px">${r.barcode||''} · ${r.category||''}</span></span></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin resultados.</div>';
+}
 async function migrarDatos(){
   if(!(sbOn&&SB)||!TIENDA) return toast("Inicia sesión en una tienda");
   if(!confirm("Asignar a la tienda \""+TIENDA+"\" todos los productos, fiados y ventas que aún NO tienen tienda. ¿Continuar?"))return;
@@ -1261,7 +1308,7 @@ function openCloud(){
    ${sbOn?'<button class="ghost" onclick="contribAll()">📚 Aportar mi inventario al catálogo</button>':''}
    ${sbOn?'<button class="ghost" onclick="pushForce()">⬆️ Subir lo de este aparato a la nube</button>':''}
    ${sbOn?'<button class="ghost" onclick="migrarDatos()">📦 Migrar datos antiguos (sin tienda) a esta tienda</button>':''}
-   ${DEV?'<button class="ghost" onclick="showDevPicker()">🔀 Cambiar de tienda (dev)</button>':''}
+   ${DEV?'<button class="ghost" onclick="showAdmin()">🔀 Panel de administrador</button>':''}
    <div style="text-align:center;color:var(--muted);font-size:12px;margin-top:6px">Tienda actual: <b>${TIENDA||'—'}</b></div>
    <button class="ghost" onclick="logout()">🚪 Cerrar sesión</button>
    ${sbOn?'<button class="ghost" onclick="disconnectCloud()">Desconectar (volver a local)</button>':''}`);

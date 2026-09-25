@@ -250,7 +250,7 @@
   .acc .chev{transition:transform .2s} .acc .m.open .chev{transform:rotate(180deg)}
   .av{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--surface);border:2px solid var(--ok);flex:none}
   .av.warn{border-color:var(--warn)} .av.bad{border-color:var(--bad)}
-  .cam{position:fixed;inset:0;background:#000;z-index:300;display:none;flex-direction:column}
+  .cam{position:fixed;inset:0;background:#000;z-index:560;display:none;flex-direction:column}
   .cam.open{display:flex}
   .cam video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
   .cam .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:76%;max-width:330px;aspect-ratio:1.25;
@@ -791,7 +791,7 @@ function adminCatForm(barcode){
   const item=barcode? (window._cat||[]).find(r=>r.barcode===barcode):null;
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${item?'Editar producto':'Agregar al catálogo'}</h2><button class="ghost" style="width:auto;margin:0" onclick="adminCatalog()">Volver</button></div>
-    <div class="field"><label>Código de barras</label><input id="ac_bc" value="${item?item.barcode:''}" placeholder="Escríbelo o escanéalo"></div>
+    <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="ac_bc" style="flex:1" value="${item?item.barcode:''}" placeholder="Escríbelo o escanéalo"><button type="button" class="cambtn f" onclick="scanAdminBc()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
     <div class="field"><label>Nombre</label><input id="ac_nm" value="${item?(item.name||'').replace(/"/g,'&quot;'):''}"></div>
     <div class="field"><label>Categoría</label><select id="ac_cat">${catOptions(item?item.category:'Otros')}</select></div>
     <button class="save" onclick="saveCatForm('${item?item.barcode:''}')">Guardar</button>
@@ -812,6 +812,7 @@ async function deleteCatItem(bc){
   if(!confirm("¿Eliminar "+bc+" del catálogo compartido?"))return;
   try{ await SB.from('catalogo').delete().eq('barcode',bc); toast("Eliminado del catálogo"); adminCatalog(); }catch(e){ toast("No se pudo"); }
 }
+function scanAdminBc(){ openScanner(code=>{ const f=$("ac_bc"); if(f) f.value=code; }); }
 async function migrarDatos(){
   if(!(sbOn&&SB)||!TIENDA) return toast("Inicia sesión en una tienda");
   if(!confirm("Asignar a la tienda \""+TIENDA+"\" todos los productos, fiados y ventas que aún NO tienen tienda. ¿Continuar?"))return;

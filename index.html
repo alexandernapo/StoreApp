@@ -249,7 +249,7 @@
   .acc .m.open .mb{display:block}
   .acc .chev{transition:transform .2s} .acc .m.open .chev{transform:rotate(180deg)}
   .av{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;background:var(--surface);border:2px solid var(--ok);flex:none}
-  .av.warn{border-color:var(--warn)} .av.bad{border-color:var(--bad)}
+  .av.warn{border-color:var(--warn)} .av.bad{border-color:var(--bad)} .av.out{border-color:#8a8f98;background:#e9ebee;filter:grayscale(.5)}
   .cam{position:fixed;inset:0;background:#000;z-index:560;display:none;flex-direction:column}
   .cam.open{display:flex}
   .cam video{width:100%;height:100%;object-fit:cover;position:absolute;inset:0}
@@ -370,6 +370,7 @@
       <select id="fLoc" onchange="renderInv()"><option value="">Ubicación</option></select>
       <select id="fEstado" onchange="renderInv()">
         <option value="">Estado</option>
+        <option value="out">⚫ Agotado (0)</option>
         <option value="bad">🔴 Por agotarse</option>
         <option value="warn">🟡 Cerca del límite</option>
         <option value="ok">🟢 Bien</option>
@@ -839,6 +840,7 @@ function renderAll(){renderQuick();renderCart();renderInv();fillFilters();render
 
 /* ================= Estado de stock (semáforo) ================= */
 function estado(p){
+  if((p.stock||0)<=0) return "out";
   if(p.minStock<=0) return "ok";
   if(p.stock<=p.minStock) return "bad";
   if(p.stock<=p.minStock*1.5) return "warn";
@@ -997,10 +999,10 @@ function renderInv(){
   let list=P.filter(p=>!p.archived
     &&(!q||p.name.toLowerCase().includes(q)||(p.barcode&&p.barcode.includes(q)))
     &&(!fc||p.category===fc)&&(!fl||p.location===fl)&&(!fe||estado(p)===fe));
-  list.sort((a,b)=>({bad:0,warn:1,ok:2}[estado(a)]-{bad:0,warn:1,ok:2}[estado(b)]));
+  list.sort((a,b)=>({out:0,bad:1,warn:2,ok:3}[estado(a)]-{out:0,bad:1,warn:2,ok:3}[estado(b)]));
   $("invList").innerHTML=list.length?list.map(p=>`<div class="prod" onclick="openProd('${p.id}')">
     <div class="av ${estado(p)}">${EMOJI[p.category]||'📦'}</div>
-    <div class="info"><b>${p.name}</b><span>${p.barcode?p.barcode+" · ":""}<span class="pill">${p.category}</span>${p.location?'<span class="pill">'+p.location+'</span>':''}</span></div>
+    <div class="info"><b>${p.name}${estado(p)==='out'?' <span class="pill" style="color:var(--bad)">agotado</span>':''}</b><span>${p.barcode?p.barcode+" · ":""}<span class="pill">${p.category}</span>${p.location?'<span class="pill">'+p.location+'</span>':''}</span></div>
     <div class="stk num">${p.stock}<small>mín ${p.minStock}</small></div>
     <div class="pr num">${money(p.price)}</div></div>`).join("")
     :'<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Sin resultados.</div>';

@@ -695,7 +695,6 @@ function showLogin(msg){
    <input id="lg_code" placeholder="Código de tienda" autocomplete="off" style="text-transform:lowercase">
    <input id="lg_pin" type="password" inputmode="numeric" placeholder="PIN">
    <button class="save" onclick="doLogin()">Entrar</button>
-   <button class="ghost" onclick="showCreate()">Crear tienda nueva</button>
    ${msg?`<div style="color:var(--bad);font-weight:700">${msg}</div>`:''}`;
 }
 function hideLogin(){ const el=$("login"); if(el) el.style.display='none'; }

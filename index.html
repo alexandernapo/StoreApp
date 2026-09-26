@@ -373,7 +373,7 @@
         <option value="bad">🔴 Por agotarse</option>
         <option value="warn">🟡 Cerca del límite</option>
         <option value="ok">🟢 Bien</option>
-        <option value="arch">📦 Archivados</option>
+        <option value="arch">📦 Catálogo / Archivados</option>
       </select>
     </div>
     <div class="card" id="invList"></div>
@@ -993,17 +993,49 @@ function fillFilters(){
 }
 function renderInv(){
   const q=$("invSearch").value.trim().toLowerCase(), fc=$("fCat").value, fl=$("fLoc").value, fe=$("fEstado").value;
-  const arch=fe==='arch';
-  let list=P.filter(p=>(arch? p.archived : !p.archived)
+  if(fe==='arch'){ return renderCatalogPick(q,fc); }
+  let list=P.filter(p=>!p.archived
     &&(!q||p.name.toLowerCase().includes(q)||(p.barcode&&p.barcode.includes(q)))
-    &&(!fc||p.category===fc)&&(!fl||p.location===fl)&&(arch||!fe||estado(p)===fe));
+    &&(!fc||p.category===fc)&&(!fl||p.location===fl)&&(!fe||estado(p)===fe));
   list.sort((a,b)=>({bad:0,warn:1,ok:2}[estado(a)]-{bad:0,warn:1,ok:2}[estado(b)]));
-  $("invList").innerHTML=list.length?list.map(p=>`<div class="prod" onclick="openProd('${p.id}')" style="${p.archived?'opacity:.6':''}">
+  $("invList").innerHTML=list.length?list.map(p=>`<div class="prod" onclick="openProd('${p.id}')">
     <div class="av ${estado(p)}">${EMOJI[p.category]||'📦'}</div>
-    <div class="info"><b>${p.name}${p.archived?' <span class="pill">archivado</span>':''}</b><span>${p.barcode?p.barcode+" · ":""}<span class="pill">${p.category}</span>${p.location?'<span class="pill">'+p.location+'</span>':''}</span></div>
+    <div class="info"><b>${p.name}</b><span>${p.barcode?p.barcode+" · ":""}<span class="pill">${p.category}</span>${p.location?'<span class="pill">'+p.location+'</span>':''}</span></div>
     <div class="stk num">${p.stock}<small>mín ${p.minStock}</small></div>
     <div class="pr num">${money(p.price)}</div></div>`).join("")
-    :('<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">'+(arch?'No hay productos archivados.':'Sin resultados.')+'</div>');
+    :'<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Sin resultados.</div>';
+}
+async function loadStoreCatalog(){
+  let rows=[]; try{ let from=0; const page=1000; while(sbOn&&SB){ const {data,error}=await SB.from('catalogo').select('barcode,name,category').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
+  window._storeCat=rows; if($("fEstado")&&$("fEstado").value==='arch') renderInv();
+}
+function renderCatalogPick(q,fc){
+  const box=$("invList");
+  if(!window._storeCat){ box.innerHTML='<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Cargando catálogo…</div>'; loadStoreCatalog(); return; }
+  const haveBc=new Set(P.filter(p=>p.barcode).map(p=>p.barcode));
+  const archived=P.filter(p=>p.archived && (!q||p.name.toLowerCase().includes(q)||(p.barcode&&p.barcode.includes(q))) && (!fc||p.category===fc));
+  const avail=(window._storeCat||[]).filter(c=>c.barcode && !haveBc.has(c.barcode) && (!q||(c.name||'').toLowerCase().includes(q)||c.barcode.includes(q)) && (!fc||c.category===fc)).slice(0,400);
+  let html='';
+  if(archived.length){
+    html+='<div class="rowline" style="color:var(--muted);font-weight:800">Archivados de tu tienda</div>';
+    html+=archived.map(p=>`<div class="prod" onclick="openProd('${p.id}')" style="opacity:.7">
+      <div class="av ${estado(p)}">${EMOJI[p.category]||'📦'}</div>
+      <div class="info"><b>${p.name} <span class="pill">archivado</span></b><span>${p.barcode?p.barcode+' · ':''}<span class="pill">${p.category}</span></span></div>
+      <div class="pr num">${money(p.price)}</div></div>`).join('');
+  }
+  html+='<div class="rowline" style="color:var(--muted);font-weight:800">Disponibles del catálogo — toca para agregar</div>';
+  html+= avail.length? avail.map(c=>`<div class="prod" onclick="addFromCatalog('${(c.barcode||'').replace(/'/g,'')}')">
+      <div class="av ok">${EMOJI[c.category]||'📦'}</div>
+      <div class="info"><b>${c.name||'(sin nombre)'}</b><span>${c.barcode} · <span class="pill">${c.category||'Otros'}</span></span></div>
+      <div class="pr" style="color:var(--brand);font-weight:800">+ Agregar</div></div>`).join('')
+      : '<div class="empty" style="padding:20px;text-align:center;color:var(--muted)">Todo el catálogo ya está en tu inventario.</div>';
+  box.innerHTML=html;
+}
+async function addFromCatalog(bc){
+  const c=(window._storeCat||[]).find(x=>x.barcode===bc); if(!c)return;
+  if(P.find(p=>p.barcode===bc)){ toast("Ya está en tu inventario"); return; }
+  const nuevo={id:uid(),barcode:bc,name:c.name||'Producto',category:c.category||'Otros',location:'',cost:0,price:0,stock:0,minStock:3,quick:false,archived:false};
+  P.push(nuevo); await saveOneProduct(nuevo); renderInv(); fillFilters(); toast("Agregado: "+nuevo.name+" — ponle precio y stock");
 }
 
 /* ---- Modal helpers ---- */

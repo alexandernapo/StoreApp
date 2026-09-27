@@ -312,6 +312,7 @@
     <input id="storeName" placeholder="Mi Tienda" maxlength="22">
   </div>
   <div class="today">Hoy<br><b class="num" id="hoyTotal">$0.00</b></div>
+  <button onclick="logout()" aria-label="Cerrar sesión" title="Cerrar sesión" style="background:rgba(255,255,255,.16);border:none;color:#fff;border-radius:10px;padding:8px 9px;flex:none;margin-left:4px"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></button>
 </header>
 
 <main>
@@ -408,6 +409,9 @@
     <div class="card chartCard"><h4 id="chartVentasTit">📈 Ventas</h4><div id="chartVentas"></div></div>
     <div class="card chartCard"><h4>🏷️ Categorías más vendidas</h4><div id="chartCat"></div></div>
     <div class="card chartCard"><h4>🔝 Top productos (unidades)</h4><div id="topList"></div></div>
+
+    <h2 style="margin-top:20px">⚫ Productos agotados (<span id="agotCount">0</span>)</h2>
+    <div class="card" id="agotList" style="padding:2px 4px"></div>
 
     <h2 style="margin-top:20px">🧮 Cierre de caja de hoy</h2>
     <div class="card" style="padding:6px 4px;margin-bottom:14px">
@@ -679,7 +683,7 @@ async function startApp(){
 /* ---- Sesión / login por tienda ---- */
 function getSess(){ try{ return JSON.parse(localStorage.getItem('sess')||'null'); }catch(e){ return null; } }
 function setSess(s){ try{ localStorage.setItem('sess',JSON.stringify(s)); }catch(e){} }
-function logout(){ try{ localStorage.removeItem('sess'); }catch(e){} location.reload(); }
+function logout(){ if(!confirm("¿Cerrar sesión y volver al inicio?")) return; try{ localStorage.removeItem('sess'); }catch(e){} location.reload(); }
 async function validateLogin(code,pin){
   code=(code||'').trim().toLowerCase(); pin=(pin||'').trim();
   if(!(sbOn&&SB)) return null;
@@ -762,11 +766,14 @@ async function adminReport(code){
   const dia=sum(ventas.filter(v=>v.date===today)), sem=sum(inR(7)), mes=sum(inR(30));
   const agg={}; ventas.forEach(v=>(v.items||[]).forEach(it=>{agg[it.name]=(agg[it.name]||0)+it.qty;}));
   const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const agot=prods.filter(p=>!p.archived && (p.stock||0)<=0);
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 ${code}</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
     <div class="stats" style="margin-top:10px"><div class="card stat"><span>Hoy</span><b class="num">${money(dia)}</b></div><div class="card stat"><span>Semana</span><b class="num">${money(sem)}</b></div><div class="card stat"><span>Mes</span><b class="num">${money(mes)}</b></div><div class="card stat"><span>Productos</span><b class="num">${prods.filter(p=>!p.archived).length}</b></div></div>
     <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">TOP PRODUCTOS</h2>
     <div class="card" style="padding:2px 4px">${top.length? top.map(([n,q])=>`<div class="rowline"><span>${n}</span><b class="num">${q} u</b></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin ventas.</div>'}</div>
+    <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">⚫ AGOTADOS (${agot.length})</h2>
+    <div class="card" style="padding:2px 4px;max-height:32vh;overflow:auto">${agot.length? agot.map(p=>`<div class="rowline"><span>${EMOJI[p.category]||'📦'} ${p.name}</span><b class="num" style="color:var(--bad)">0</b></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Ninguno.</div>'}</div>
    </div>`;
 }
 async function adminCatalog(){
@@ -1257,6 +1264,9 @@ function renderRep(){
   recomputeCierre();
   drawMonths();
   renderThemePicker();
+  { const agot=P.filter(p=>!p.archived && (p.stock||0)<=0);
+    if($("agotCount")) $("agotCount").textContent=agot.length;
+    if($("agotList")) $("agotList").innerHTML=agot.length? agot.map(p=>`<div class="rowline"><span>${EMOJI[p.category]||'📦'} ${p.name}</span><b class="num" style="color:var(--bad)">0</b></div>`).join('') : '<div class="rowline" style="color:var(--muted)">No hay productos agotados 🎉</div>'; }
   { const cl=$("cloudLbl"); if(cl) cl.textContent = sbOn ? "☁️ Sincronizado en la nube ✓" : "Datos solo en este aparato"; }
 }
 function recomputeCierre(){

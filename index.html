@@ -396,6 +396,8 @@
       <div class="card stat"><span>📱 Transferencias</span><b class="num" id="rTra">$0.00</b></div>
       <div class="card stat"><span>🧾 N.º ventas</span><b class="num" id="rCnt">0</b></div>
       <div class="card stat"><span>📤 Salidas</span><b class="num" id="rSal">$0.00</b></div>
+      <div class="card stat"><span>💰 Ganancia</span><b class="num" id="rGan">$0.00</b></div>
+      <div class="card stat"><span>📈 Margen</span><b class="num" id="rMar">0%</b></div>
     </div>
 
     <div class="metricRow">
@@ -764,12 +766,15 @@ async function adminReport(code){
   const inR=days=>{ const set=new Set(); for(let i=0;i<days;i++){ const d=new Date(now); d.setDate(now.getDate()-i); set.add(dkey(d)); } return ventas.filter(v=>set.has(v.date)); };
   const sum=a=>a.reduce((s,v)=>s+(v.total||0),0);
   const dia=sum(ventas.filter(v=>v.date===today)), sem=sum(inR(7)), mes=sum(inR(30));
+  const pById={}; prods.forEach(p=>{pById[p.id]=p;});
+  const costOf=it=>(typeof it.cost==='number'?it.cost:((pById[it.id]||{}).cost||0));
+  const ganMes=inR(30).reduce((s,v)=>s+(v.items||[]).reduce((a,it)=>a+(((it.price||0)-costOf(it))*(it.qty||0)),0),0);
   const agg={}; ventas.forEach(v=>(v.items||[]).forEach(it=>{agg[it.name]=(agg[it.name]||0)+it.qty;}));
   const top=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const agot=prods.filter(p=>!p.archived && (p.stock||0)<=0);
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📊 ${code}</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
-    <div class="stats" style="margin-top:10px"><div class="card stat"><span>Hoy</span><b class="num">${money(dia)}</b></div><div class="card stat"><span>Semana</span><b class="num">${money(sem)}</b></div><div class="card stat"><span>Mes</span><b class="num">${money(mes)}</b></div><div class="card stat"><span>Productos</span><b class="num">${prods.filter(p=>!p.archived).length}</b></div></div>
+    <div class="stats" style="margin-top:10px"><div class="card stat"><span>Hoy</span><b class="num">${money(dia)}</b></div><div class="card stat"><span>Semana</span><b class="num">${money(sem)}</b></div><div class="card stat"><span>Mes</span><b class="num">${money(mes)}</b></div><div class="card stat"><span>💰 Ganancia mes</span><b class="num">${money(ganMes)}</b></div><div class="card stat"><span>Productos</span><b class="num">${prods.filter(p=>!p.archived).length}</b></div></div>
     <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">TOP PRODUCTOS</h2>
     <div class="card" style="padding:2px 4px">${top.length? top.map(([n,q])=>`<div class="rowline"><span>${n}</span><b class="num">${q} u</b></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin ventas.</div>'}</div>
     <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">⚫ AGOTADOS (${agot.length})</h2>
@@ -955,7 +960,7 @@ async function finalizeSale(fiadoId){
   const t=total();
   const sold=[];
   cart.forEach(l=>{ const p=P.find(x=>x.id===l.id); if(p){ p.stock=Math.max(0,p.stock-l.qty); sold.push(p); } });
-  V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>({id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category})),total:t,pago,fiadoId:fiadoId||null});
+  V.push({id:uid(),date:todayKey(),ts:Date.now(),items:cart.map(l=>{const p=P.find(x=>x.id===l.id);return {id:l.id,name:l.name,price:l.price,qty:l.qty,category:l.category,cost:p?(p.cost||0):0};}),total:t,pago,fiadoId:fiadoId||null});
   await saveManyProducts(sold); await sSet("ventas",V);
   if(pago==="fiado" && fiadoId){ await addCargoFiado(fiadoId,t,"Venta fiada"); }
   cart=[]; $("recibi").value=""; renderCart(); renderInv(); updateHoy(); autoArchive();
@@ -1245,6 +1250,9 @@ function renderRep(){
   $("repPeriodLbl").textContent = repPeriod==='dia'?'Ventas de hoy':repPeriod==='semana'?'Ventas de la semana':'Ventas del mes';
   $("repTotal").textContent=money(efe+tra);
   $("rEfe").textContent=money(efe); $("rTra").textContent=money(tra); $("rCnt").textContent=sv.length; $("rSal").textContent=money(salP);
+  { const costOf=it=>(typeof it.cost==='number'?it.cost:(((P.find(x=>x.id===it.id)||{}).cost)||0));
+    const gan=sv.reduce((s,v)=>s+(v.items||[]).reduce((a,it)=>a+(((it.price||0)-costOf(it))*(it.qty||0)),0),0);
+    const totV=efe+tra; if($("rGan"))$("rGan").textContent=money(gan); if($("rMar"))$("rMar").textContent=(totV>0?Math.round(gan/totV*100):0)+"%"; }
 
   drawSalesChart(dates);
   // categorías (según métrica elegida)

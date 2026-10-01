@@ -739,7 +739,10 @@ async function doCreate(){
 async function showAdmin(){
   hideSplash(); const el=$("login"); el.style.display='flex'; el.style.alignItems='flex-start'; el.style.overflowY='auto';
   $("loginInner").style.maxWidth='520px';
-  let rows=[]; try{ const {data}=await SB.from('tiendas').select('code,name,license'); rows=(data||[]).filter(r=>r.code!==DEV_CODE); }catch(e){}
+  let rows=[];
+  try{ const {data,error}=await SB.from('tiendas').select('code,name,license'); if(error) throw error; rows=(data||[]); }
+  catch(e){ try{ const {data}=await SB.from('tiendas').select('code,name'); rows=(data||[]); }catch(_){} }
+  rows=rows.filter(r=>r.code!==DEV_CODE);
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">🛠️ Administrador</h2><button class="ghost" style="width:auto;margin:0" onclick="logout()">Salir</button></div>
    <button class="save" onclick="showCreate(true)">➕ Crear tienda</button>

@@ -731,7 +731,8 @@ async function doCreate(){
   if(!sbOn) return toast("Sin conexión a la nube");
   try{ const {data:ex}=await SB.from('tiendas').select('code').eq('code',code).maybeSingle();
     if(ex) return toast("Ese código ya existe, elige otro");
-    await SB.from('tiendas').insert({code,pin,name});
+    const {error}=await SB.from('tiendas').insert({code,pin,name});
+    if(error) return toast("No se pudo crear: "+(error.message||error.code||'error'));
     if(_createDev){ toast("Tienda creada: "+name+" ("+code+")"); showAdmin(); return; }
     setSess({code,pin,dev:code===DEV_CODE}); TIENDA=code; hideLogin(); startApp();
   }catch(e){ toast("No se pudo crear la tienda"); }
@@ -1161,7 +1162,7 @@ async function saveRapido(){
   const nuevo={id:uid(),barcode:$("r_bc").value.trim(),name:nm,category:$("r_cat").value,
     location:CFG.rapidoSec,cost:0,price:+$("r_price").value||0,stock:+$("r_qty").value||0,minStock:3,quick:false};
   P.push(nuevo);
-  await saveOneProduct(nuevo); renderAll();
+  await saveOneProduct(nuevo); if(nuevo.barcode) cbPut(nuevo.barcode,nuevo.name,nuevo.category); renderAll();
   ["r_bc","r_nm","r_qty","r_price"].forEach(i=>$(i).value="");
   $("r_count").textContent=`✔ ${P.length} productos en total`;
   toast(nm+" agregado"); $("r_bc").focus();
@@ -1211,6 +1212,7 @@ async function applyImport(){
     if(ex){ ex.stock+=qty; if(r.cost>0)ex.cost=r.cost; }
     else { P.push({id:uid(),barcode:r.barcode,name:r.name||"Producto sin nombre",category:"Otros",
       location:"",cost:r.cost,price:Math.round(r.cost*1.3*100)/100,stock:qty,minStock:3,quick:false}); }
+    if(r.barcode) cbPut(r.barcode, r.name||"Producto", (ex?ex.category:"Otros"));
   });
   await saveProductos(); closeModal(); renderAll(); toast("Factura importada");
 }

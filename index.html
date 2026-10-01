@@ -314,6 +314,7 @@
   <div class="today">Hoy<br><b class="num" id="hoyTotal">$0.00</b></div>
   <button onclick="logout()" aria-label="Cerrar sesión" title="Cerrar sesión" style="background:rgba(255,255,255,.16);border:none;color:#fff;border-radius:10px;padding:8px 9px;flex:none;margin-left:4px"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></button>
 </header>
+<div id="licBanner" style="display:none"></div>
 
 <main>
   <!-- CAJA -->
@@ -504,6 +505,8 @@ let SB=null, sbOn=false;
 let F=[];
 let _editingId=null;
 let TIENDA=null, DEV=false;
+let LICENSE=null;
+function licDaysLeft(lic){ if(!lic) return Infinity; const t=new Date(todayKey()+'T00:00:00'), e=new Date(String(lic).slice(0,10)+'T00:00:00'); return Math.round((e-t)/86400000); }
 function pk(k){ return (TIENDA? TIENDA+'::' : '') + k; }
 const DEV_CODE="admin";
 const SB_URL="https://inldqynhwmmkglqeplje.supabase.co";
@@ -663,7 +666,7 @@ async function gate(){
   const s=getSess();
   if(s && s.code){
     if(!sbOn){ TIENDA = s.code===DEV_CODE ? (s.tienda||null) : s.code; if(TIENDA){ hideLogin(); startApp(); return; } }
-    else { const r=await validateLogin(s.code,s.pin); if(r){ if(r.dev){ showAdmin(); return; } if(licenseExpired(r.license)){ showLogin("Licencia vencida. Contacta al administrador."); return; } TIENDA=s.code; hideLogin(); startApp(); return; } }
+    else { const r=await validateLogin(s.code,s.pin); if(r){ if(r.dev){ showAdmin(); return; } if(licenseExpired(r.license)){ showLogin("Licencia vencida. Contacta al administrador."); return; } LICENSE=r.license||null; TIENDA=s.code; hideLogin(); startApp(); return; } }
   }
   showLogin();
 }
@@ -679,6 +682,10 @@ async function startApp(){
   $("storeName").oninput=e=>{CFG.store=e.target.value;sSet("config",CFG);};
   await loadCart();
   renderAll(); autoArchive(); autoLink();
+  { const b=$("licBanner"); if(b){ const dl=licDaysLeft(LICENSE);
+      if(dl<=5){ b.innerHTML='⚠ Tu licencia '+(dl<=0?'vence hoy':'vence en '+dl+' día(s)')+'. Contacta al administrador: <a href="https://wa.me/593982007962" style="color:#8a1f1f;font-weight:800">0982007962</a>';
+        b.style.cssText='display:block;background:#FBE6E6;color:#8a1f1f;padding:10px 14px;font-weight:700;font-size:13px;text-align:center'; }
+      else b.style.display='none'; } }
   hideLogin(); setTimeout(hideSplash,500);
   if(new URLSearchParams(location.search).get('camara')){ nav('caja'); setTimeout(()=>scanCaja(), 800); }
 }
@@ -714,7 +721,7 @@ async function doLogin(){
   if(!r.dev && licenseExpired(r.license)) return showLogin("Licencia vencida. Contacta al administrador.");
   setSess({code,pin,dev:!!r.dev});
   if(r.dev){ showAdmin(); return; }
-  TIENDA=code; hideLogin(); startApp();
+  LICENSE=r.license||null; TIENDA=code; hideLogin(); startApp();
 }
 let _createDev=false;
 function showCreate(dev){ _createDev=!!dev;
@@ -758,11 +765,47 @@ async function showAdmin(){
          <button class="ghost" style="width:auto;margin:0" onclick="adminReport('${r.code}')">📊 Reportes</button>
          <button class="ghost" style="width:auto;margin:0" onclick="adminPin('${r.code}')">🔑 PIN</button>
          <button class="ghost" style="width:auto;margin:0" onclick="adminLic('${r.code}')">📅 Licencia</button>
+         <button class="ghost" style="width:auto;margin:0;color:var(--bad)" onclick="adminDelete('${r.code}')">🗑️ Borrar</button>
        </div></div>`).join('') : '<p class="muted">Aún no hay tiendas registradas en la tabla.</p>'}
   </div>`;
 }
 async function adminPin(code){ const np=prompt("Nuevo PIN para "+code+":"); if(np==null)return; const pin=np.trim(); if(!pin)return; try{ await SB.from('tiendas').update({pin}).eq('code',code); toast("PIN actualizado"); }catch(e){ toast("No se pudo"); } }
-async function adminLic(code){ const d=prompt("Vencimiento AAAA-MM-DD (vacío = sin límite):"); if(d==null)return; const v=d.trim()||null; try{ await SB.from('tiendas').update({license:v}).eq('code',code); toast("Licencia actualizada"); showAdmin(); }catch(e){ toast("No se pudo"); } }
+async function adminLic(code){
+  let cur=''; try{ const {data}=await SB.from('tiendas').select('license').eq('code',code).maybeSingle(); cur=data&&data.license?String(data.license).slice(0,10):''; }catch(e){}
+  $("login").style.display='flex';
+  $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📅 Licencia · ${code}</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
+    <p class="muted">Vence el:</p>
+    <input type="date" id="lic_d" value="${cur}">
+    <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">
+      <button class="ghost" style="width:auto;margin:0" onclick="licQuick(10)">+10 días</button>
+      <button class="ghost" style="width:auto;margin:0" onclick="licQuick(15)">+15 días</button>
+      <button class="ghost" style="width:auto;margin:0" onclick="licQuick(30)">+30 días</button>
+    </div>
+    <button class="save" onclick="saveLic('${code}')">Guardar vencimiento</button>
+    <button class="ghost" onclick="saveLic('${code}',true)">Quitar límite (sin vencimiento)</button>
+   </div>`;
+}
+function licQuick(n){ const d=new Date(); d.setDate(d.getDate()+n); if($("lic_d")) $("lic_d").value=dkey(d); }
+async function saveLic(code, none){
+  const v = none? null : ((($("lic_d")&&$("lic_d").value)||'').trim()||null);
+  try{ const {error}=await SB.from('tiendas').update({license:v}).eq('code',code); if(error)throw error; toast("Licencia actualizada ✓"); showAdmin(); }
+  catch(e){ toast("No se pudo. ¿Corriste el SQL de la columna license?"); }
+}
+async function adminDelete(code){
+  const pin=prompt('Para ELIMINAR la tienda "'+code+'", ingresa el PIN de administrador:');
+  if(pin==null) return;
+  try{ const {data}=await SB.from('tiendas').select('pin').eq('code',DEV_CODE).maybeSingle();
+    if(!data || String(data.pin)!==pin.trim()){ toast("PIN de administrador incorrecto"); return; } }catch(e){ toast("No se pudo validar el PIN"); return; }
+  if(!confirm('Esto borra la tienda "'+code+'" y TODOS sus datos (inventario, ventas, fiados). Esta acción no se puede deshacer. ¿Continuar?')) return;
+  try{
+    await SB.from('productos').delete().eq('tienda',code);
+    await SB.from('fiados').delete().eq('tienda',code);
+    await SB.from('kv').delete().like('key', code+'::%');
+    await SB.from('tiendas').delete().eq('code',code);
+    toast("Tienda eliminada"); showAdmin();
+  }catch(e){ toast("No se pudo eliminar"); }
+}
 async function adminReport(code){
   toast("Cargando reporte…");
   let ventas=[], prods=[];

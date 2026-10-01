@@ -740,15 +740,17 @@ async function doCreate(){
 async function showAdmin(){
   hideSplash(); const el=$("login"); el.style.display='flex'; el.style.alignItems='flex-start'; el.style.overflowY='auto';
   $("loginInner").style.maxWidth='520px';
-  let rows=[];
-  try{ const {data,error}=await SB.from('tiendas').select('code,name,license'); if(error) throw error; rows=(data||[]); }
-  catch(e){ try{ const {data}=await SB.from('tiendas').select('code,name'); rows=(data||[]); }catch(_){} }
-  rows=rows.filter(r=>r.code!==DEV_CODE);
+  let all=[], errMsg='';
+  if(!(sbOn&&SB)){ errMsg='Sin conexión a la nube'; }
+  else { try{ const {data,error}=await SB.from('tiendas').select('*'); if(error){errMsg=error.message||error.code||'error';} all=(data||[]); }catch(e){ errMsg=(e&&e.message)||'excepción'; } }
+  const rows=all.filter(r=>r.code!==DEV_CODE);
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">🛠️ Administrador</h2><button class="ghost" style="width:auto;margin:0" onclick="logout()">Salir</button></div>
    <button class="save" onclick="showCreate(true)">➕ Crear tienda</button>
    <button class="ghost" onclick="adminCatalog()">📚 Ver catálogo de productos</button>
-   <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">TIENDAS</h2>
+   <button class="ghost" onclick="showAdmin()">🔄 Recargar lista</button>
+   <h2 style="font-size:13px;color:var(--muted);margin:14px 0 6px">TIENDAS (${rows.length} · total filas ${all.length})</h2>
+   ${errMsg?`<div style="color:var(--bad);font-weight:700;font-size:13px;margin-bottom:8px">Error: ${errMsg}</div>`:''}
    ${rows.length? rows.map(r=>`<div class="card" style="padding:12px;margin-bottom:10px">
        <div style="font-weight:800">${r.name||r.code} <span class="muted">(${r.code})</span></div>
        <div class="muted" style="font-size:12px;margin:2px 0 8px">Licencia: ${r.license? (String(r.license).slice(0,10)+(licenseExpired(r.license)?' ⚠ vencida':'')) : 'sin límite'}</div>
@@ -756,7 +758,7 @@ async function showAdmin(){
          <button class="ghost" style="width:auto;margin:0" onclick="adminReport('${r.code}')">📊 Reportes</button>
          <button class="ghost" style="width:auto;margin:0" onclick="adminPin('${r.code}')">🔑 PIN</button>
          <button class="ghost" style="width:auto;margin:0" onclick="adminLic('${r.code}')">📅 Licencia</button>
-       </div></div>`).join('') : '<p class="muted">Aún no hay tiendas. Crea la primera.</p>'}
+       </div></div>`).join('') : '<p class="muted">Aún no hay tiendas registradas en la tabla.</p>'}
   </div>`;
 }
 async function adminPin(code){ const np=prompt("Nuevo PIN para "+code+":"); if(np==null)return; const pin=np.trim(); if(!pin)return; try{ await SB.from('tiendas').update({pin}).eq('code',code); toast("PIN actualizado"); }catch(e){ toast("No se pudo"); } }

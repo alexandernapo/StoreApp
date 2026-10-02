@@ -802,8 +802,11 @@ async function adminDelete(code){
     await SB.from('productos').delete().eq('tienda',code);
     await SB.from('fiados').delete().eq('tienda',code);
     await SB.from('kv').delete().like('key', code+'::%');
-    await SB.from('tiendas').delete().eq('code',code);
-    toast("Tienda eliminada"); showAdmin();
+    const {error}=await SB.from('tiendas').delete().eq('code',code);
+    if(error){ toast("No se pudo: "+(error.message||error.code)); return; }
+    const {data:still}=await SB.from('tiendas').select('code').eq('code',code).maybeSingle();
+    if(still){ toast("No se borró: faltan permisos. Corre el SQL de políticas en Supabase."); return; }
+    toast("Tienda eliminada ✓"); showAdmin();
   }catch(e){ toast("No se pudo eliminar"); }
 }
 async function adminReport(code){

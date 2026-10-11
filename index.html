@@ -835,7 +835,7 @@ async function adminReport(code){
 }
 async function adminCatalog(){
   toast("Cargando catálogo…");
-  let rows=[]; try{ let from=0; const page=1000; while(true){ const {data,error}=await SB.from('catalogo').select('barcode,name,category').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
+  let rows=[]; try{ let from=0; const page=1000; while(true){ const {data,error}=await SB.from('catalogo').select('barcode,name,category,price').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
   window._cat=rows;
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📚 Catálogo (${rows.length})</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
@@ -849,7 +849,7 @@ async function adminCatalog(){
 function adminCatFilter(){
   const q=(($("catSearch")&&$("catSearch").value)||'').trim().toLowerCase();
   const rows=(window._cat||[]).filter(r=>!q||(r.name||'').toLowerCase().includes(q)||(r.barcode||'').includes(q)).slice(0,400);
-  $("catList").innerHTML=rows.length? rows.map(r=>`<div class="rowline" style="cursor:pointer" onclick="adminCatForm('${(r.barcode||'').replace(/'/g,'')}')"><span>${EMOJI[r.category]||'📦'} ${r.name||'(sin nombre)'}<br><span class="muted" style="font-size:11px">${r.barcode||''} · ${r.category||''}</span></span><span class="muted">✏️</span></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin resultados.</div>';
+  $("catList").innerHTML=rows.length? rows.map(r=>`<div class="rowline" style="cursor:pointer" onclick="adminCatForm('${(r.barcode||'').replace(/'/g,'')}')"><span>${EMOJI[r.category]||'📦'} ${r.name||'(sin nombre)'}<br><span class="muted" style="font-size:11px">${r.barcode||''} · ${r.category||''}${(r.price>0)?' · PVP '+money(r.price):''}</span></span><span class="muted">✏️</span></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin resultados.</div>';
 }
 function adminCatForm(barcode){
   const item=barcode? (window._cat||[]).find(r=>r.barcode===barcode):null;
@@ -858,16 +858,17 @@ function adminCatForm(barcode){
     <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="ac_bc" style="flex:1" value="${item?item.barcode:''}" placeholder="Escríbelo o escanéalo"><button type="button" class="cambtn f" onclick="scanAdminBc()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
     <div class="field"><label>Nombre</label><input id="ac_nm" value="${item?(item.name||'').replace(/"/g,'&quot;'):''}"></div>
     <div class="field"><label>Categoría</label><select id="ac_cat">${catOptions(item?item.category:'Otros')}</select></div>
+    <div class="field"><label>Precio de venta al público (PVP) $</label><input id="ac_price" type="number" inputmode="decimal" value="${item&&item.price!=null?item.price:''}" placeholder="Sugerido (cada tienda puede cambiarlo)"></div>
     <button class="save" onclick="saveCatForm('${item?item.barcode:''}')">Guardar</button>
     ${item?`<button class="ghost" style="color:var(--bad)" onclick="deleteCatItem('${item.barcode}')">Eliminar del catálogo</button>`:''}
    </div>`;
 }
 async function saveCatForm(orig){
-  const bc=($("ac_bc").value||'').trim(), nm=($("ac_nm").value||'').trim(), cat=$("ac_cat").value;
+  const bc=($("ac_bc").value||'').trim(), nm=($("ac_nm").value||'').trim(), cat=$("ac_cat").value, price=($("ac_price").value!==''?(+$("ac_price").value||0):null);
   if(!bc) return toast("Falta el código de barras");
   if(!nm) return toast("Falta el nombre");
   try{
-    await SB.from('catalogo').upsert({barcode:bc,name:nm,category:cat,updated_at:new Date().toISOString()});
+    await SB.from('catalogo').upsert({barcode:bc,name:nm,category:cat,price:price,updated_at:new Date().toISOString()});
     if(orig && orig!==bc){ await SB.from('catalogo').delete().eq('barcode',orig); }
     toast("Catálogo guardado ✓"); adminCatalog();
   }catch(e){ toast("No se pudo guardar"); }
@@ -1072,7 +1073,7 @@ function renderInv(){
     :'<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Sin resultados.</div>';
 }
 async function loadStoreCatalog(){
-  let rows=[]; try{ let from=0; const page=1000; while(sbOn&&SB){ const {data,error}=await SB.from('catalogo').select('barcode,name,category').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
+  let rows=[]; try{ let from=0; const page=1000; while(sbOn&&SB){ const {data,error}=await SB.from('catalogo').select('barcode,name,category,price').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
   window._storeCat=rows; if($("fEstado")&&$("fEstado").value==='arch') renderInv();
 }
 function renderCatalogPick(q,fc){
@@ -1092,7 +1093,7 @@ function renderCatalogPick(q,fc){
   html+='<div class="rowline" style="color:var(--muted);font-weight:800">Disponibles del catálogo — toca para agregar</div>';
   html+= avail.length? avail.map(c=>`<div class="prod" onclick="addFromCatalog('${(c.barcode||'').replace(/'/g,'')}')">
       <div class="av ok">${EMOJI[c.category]||'📦'}</div>
-      <div class="info"><b>${c.name||'(sin nombre)'}</b><span>${c.barcode} · <span class="pill">${c.category||'Otros'}</span></span></div>
+      <div class="info"><b>${c.name||'(sin nombre)'}</b><span>${c.barcode} · <span class="pill">${c.category||'Otros'}</span>${(c.price>0)?' · PVP '+money(c.price):''}</span></div>
       <div class="pr" style="color:var(--brand);font-weight:800">+ Agregar</div></div>`).join('')
       : '<div class="empty" style="padding:20px;text-align:center;color:var(--muted)">Todo el catálogo ya está en tu inventario.</div>';
   box.innerHTML=html;
@@ -1100,8 +1101,9 @@ function renderCatalogPick(q,fc){
 async function addFromCatalog(bc){
   const c=(window._storeCat||[]).find(x=>x.barcode===bc); if(!c)return;
   if(P.find(p=>p.barcode===bc)){ toast("Ya está en tu inventario"); return; }
-  const nuevo={id:uid(),barcode:bc,name:c.name||'Producto',category:c.category||'Otros',location:'',cost:0,price:0,stock:0,minStock:3,quick:false,archived:false};
-  P.push(nuevo); await saveOneProduct(nuevo); renderInv(); fillFilters(); toast("Agregado: "+nuevo.name+" — ponle precio y stock");
+  const pvp=(typeof c.price==='number'&&c.price>0)?c.price:0;
+  const nuevo={id:uid(),barcode:bc,name:c.name||'Producto',category:c.category||'Otros',location:'',cost:0,price:pvp,stock:0,minStock:3,quick:false,archived:false};
+  P.push(nuevo); await saveOneProduct(nuevo); renderInv(); fillFilters(); toast("Agregado: "+nuevo.name+(pvp?(" · PVP "+money(pvp)):" — ponle precio")+" y stock");
 }
 
 /* ---- Modal helpers ---- */
@@ -1115,7 +1117,7 @@ function openProd(id=null,prefill=""){
   _editingId=id||null;
   const p=id?P.find(x=>x.id===id):null;
   openModal(`<h3>${p?"Editar producto":"Nuevo producto"}<button class="x" onclick="closeModal()">×</button></h3>
-   <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="f_bc" style="flex:1" value="${p?p.barcode:(/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Opcional"><button type="button" class="cambtn f" onclick="autoLookup('f_bc','f_nm','f_cat')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('f_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
+   <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="f_bc" style="flex:1" value="${p?p.barcode:(/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Opcional"><button type="button" class="cambtn f" onclick="autoLookup('f_bc','f_nm','f_cat','f_price')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('f_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
    <div class="field"><label>Nombre</label><input id="f_nm" value="${p?p.name:(!/^\\d+$/.test(prefill)?prefill:"")}" placeholder="Ej. Coca-Cola 500ml"></div>
    <button type="button" class="ghost" style="margin:-2px 0 10px;font-size:14px" onclick="ocrCapture('f_nm','f_price')">📷 Leer nombre/peso/precio de una foto</button>
    <div class="two">
@@ -1144,7 +1146,7 @@ async function saveProd(id){
   if(!o.name){toast("Ponle un nombre al producto");return;}
   if(o.barcode){ const dup=P.find(x=>x.barcode&&x.barcode===o.barcode&&x.id!==id); if(dup){ toast("Ese código ya está registrado en: "+dup.name); return; } }
   let prod; if(id){ prod=P.find(x=>x.id===id); Object.assign(prod,o); } else { prod={id:uid(),...o}; P.push(prod); }
-  await saveOneProduct(prod); if(o.barcode) cbPut(o.barcode,o.name,o.category); closeModal(); renderAll(); toast("Producto guardado");
+  await saveOneProduct(prod); if(o.barcode) cbPut(o.barcode,o.name,o.category,o.price); closeModal(); renderAll(); toast("Producto guardado");
 }
 async function delProd(id){ P=P.filter(x=>x.id!==id); await lset('productos',P,Date.now()); pDeleteRow(id); closeModal(); renderAll(); toast("Producto eliminado"); }
 async function toggleArchive(id){
@@ -1192,7 +1194,7 @@ function openRapido(){
   openModal(`<h3>Inventario rápido<button class="x" onclick="closeModal()">×</button></h3>
    <div class="hint">Levanta tu stock por secciones. Escanea → nombre → categoría → cantidad → precio. Puedes salir y continuar cuando quieras.</div>
    <div class="field"><label>Sección que estás levantando</label><input id="r_sec" value="${sec}" placeholder="Ej. Refrigeradores"></div>
-   <div class="field"><label>Código (opcional)</label><div style="display:flex;gap:8px"><input id="r_bc" style="flex:1" placeholder="Escanea aquí" autocomplete="off"><button type="button" class="cambtn f" onclick="autoLookup('r_bc','r_nm','r_cat')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('r_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
+   <div class="field"><label>Código (opcional)</label><div style="display:flex;gap:8px"><input id="r_bc" style="flex:1" placeholder="Escanea aquí" autocomplete="off"><button type="button" class="cambtn f" onclick="autoLookup('r_bc','r_nm','r_cat','r_price')" title="Buscar datos del código"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button><button type="button" class="cambtn f" onclick="scanField('r_bc')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
    <div class="field"><label>Nombre</label><input id="r_nm" placeholder="Nombre del producto"></div>
    <button type="button" class="ghost" style="margin:-2px 0 10px;font-size:14px" onclick="ocrCapture('r_nm','r_price')">📷 Leer nombre/peso/precio de una foto</button>
    <div class="two">
@@ -1210,7 +1212,7 @@ async function saveRapido(){
   const nuevo={id:uid(),barcode:$("r_bc").value.trim(),name:nm,category:$("r_cat").value,
     location:CFG.rapidoSec,cost:0,price:+$("r_price").value||0,stock:+$("r_qty").value||0,minStock:3,quick:false};
   P.push(nuevo);
-  await saveOneProduct(nuevo); if(nuevo.barcode) cbPut(nuevo.barcode,nuevo.name,nuevo.category); renderAll();
+  await saveOneProduct(nuevo); if(nuevo.barcode) cbPut(nuevo.barcode,nuevo.name,nuevo.category,nuevo.price); renderAll();
   ["r_bc","r_nm","r_qty","r_price"].forEach(i=>$(i).value="");
   $("r_count").textContent=`✔ ${P.length} productos en total`;
   toast(nm+" agregado"); $("r_bc").focus();
@@ -1260,7 +1262,7 @@ async function applyImport(){
     if(ex){ ex.stock+=qty; if(r.cost>0)ex.cost=r.cost; }
     else { P.push({id:uid(),barcode:r.barcode,name:r.name||"Producto sin nombre",category:"Otros",
       location:"",cost:r.cost,price:Math.round(r.cost*1.3*100)/100,stock:qty,minStock:3,quick:false}); }
-    if(r.barcode) cbPut(r.barcode, r.name||"Producto", (ex?ex.category:"Otros"));
+    if(r.barcode) cbPut(r.barcode, r.name||"Producto", (ex?ex.category:"Otros"), (ex?ex.price:Math.round(r.cost*1.3*100)/100));
   });
   await saveProductos(); closeModal(); renderAll(); toast("Factura importada");
 }
@@ -1686,23 +1688,29 @@ function existsBarcode(code){
   return true;
 }
 function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; f.dispatchEvent(new Event('input')); }
-  if(id==='f_bc'){ if(!existsBarcode(code)) autoLookup('f_bc','f_nm','f_cat'); }
-  else if(id==='r_bc'){ if(!existsBarcode(code)) autoLookup('r_bc','r_nm','r_cat'); }
+  if(id==='f_bc'){ if(!existsBarcode(code)) autoLookup('f_bc','f_nm','f_cat','f_price'); }
+  else if(id==='r_bc'){ if(!existsBarcode(code)) autoLookup('r_bc','r_nm','r_cat','r_price'); }
 }); }
 async function cbGet(code){
   if(!(sbOn&&SB)) return null;
-  try{ const {data,error}=await SB.from('catalogo').select('name,category').eq('barcode',code).maybeSingle();
-    if(error||!data) return null; return {name:data.name, category:data.category}; }catch(e){ return null; }
+  try{ const {data,error}=await SB.from('catalogo').select('name,category,price').eq('barcode',code).maybeSingle();
+    if(error||!data) return null; return {name:data.name, category:data.category, price:data.price}; }catch(e){ return null; }
 }
-async function cbPut(code,name,category){
+async function cbPut(code,name,category,price){
   if(!(sbOn&&SB)||!code||!name) return;
-  try{ await SB.from('catalogo').upsert({barcode:code,name:name,category:category||'Otros',updated_at:new Date().toISOString()}); }catch(e){}
+  const row={barcode:code,name:name,category:category||'Otros',updated_at:new Date().toISOString()};
+  if(typeof price==='number' && price>0){
+    try{ const {data}=await SB.from('catalogo').select('price').eq('barcode',code).maybeSingle();
+      if(!data || data.price==null || data.price===0) row.price=price;   // solo siembra el PVP si el catálogo no lo tiene
+    }catch(e){}
+  }
+  try{ await SB.from('catalogo').upsert(row); }catch(e){}
 }
 async function contribAll(){
   if(!(sbOn&&SB)) return toast("Conéctate primero");
   const items=P.filter(p=>p.barcode); if(!items.length) return toast("No hay productos con código");
   toast("Aportando al catálogo…");
-  for(const p of items){ await cbPut(p.barcode,p.name,p.category); }
+  for(const p of items){ await cbPut(p.barcode,p.name,p.category,p.price); }
   closeModal(); toast("Catálogo actualizado ✓ ("+items.length+")");
 }
 async function importFromCatalog(){
@@ -1712,7 +1720,7 @@ async function importFromCatalog(){
   try{
     let rows=[], from=0; const page=1000;
     while(true){
-      const {data,error}=await SB.from('catalogo').select('barcode,name,category').range(from,from+page-1);
+      const {data,error}=await SB.from('catalogo').select('barcode,name,category,price').range(from,from+page-1);
       if(error) throw error;
       rows=rows.concat(data||[]);
       if(!data||data.length<page) break; from+=page;
@@ -1757,13 +1765,15 @@ function guessCat(txt){
   for(const [cat,kws] of map){ if(kws.some(k=>txt.includes(k))) return cat; }
   return 'Otros';
 }
-async function autoLookup(codeId,nameId,catId){
+async function autoLookup(codeId,nameId,catId,priceId){
   const code=(($(codeId)&&$(codeId).value)||'').trim(); if(!code) return toast("Escribe o escanea el código primero");
   if(existsBarcode(code)) return;
   toast("Buscando datos…");
   let d=await cbGet(code);              // 1) tu catálogo compartido
   if(!d||!d.name) d=await lookupBarcode(code); // 2) banco mundial (respaldo)
-  if(d&&d.name){ if($(nameId)&&!$(nameId).value) $(nameId).value=d.name; if(catId&&$(catId)&&d.category) $(catId).value=d.category; toast("Producto encontrado ✓"); }
+  if(d&&d.name){ if($(nameId)&&!$(nameId).value) $(nameId).value=d.name; if(catId&&$(catId)&&d.category) $(catId).value=d.category;
+    if(priceId&&$(priceId)&&!$(priceId).value&&typeof d.price==='number'&&d.price>0) $(priceId).value=d.price;
+    toast("Producto encontrado ✓"); }
   else toast("No está en el catálogo; escribe el nombre y quedará guardado para la próxima.");
 }
 function scanCompra(){ openScanner(code=>{ const p=P.find(x=>x.barcode&&x.barcode===code); if(p){ pickCompra(p.id,p.name); } else { $("c_search").value=code; compraSearch(); } }); }

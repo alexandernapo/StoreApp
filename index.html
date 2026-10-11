@@ -515,6 +515,8 @@ const $=id=>document.getElementById(id);
 const money=n=>"$"+(Math.round(n*100)/100).toFixed(2);
 const todayKey=()=>{const x=new Date();return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function synId(){ return 'art-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function isSyn(bc){ return typeof bc==='string' && bc.indexOf('art-')===0; }
 const EMOJI={Bebidas:"🥤",Lácteos:"🥛",Snacks:"🍪",Abarrotes:"🍚",Aseo:"🧼",Limpieza:"🧽",Panadería:"🥖","Frutas y verduras":"🥑",Helados:"🍦",Carnes:"🥩",Otros:"📦",Huevos:"🥚",Recargas:"📶"};
 const CATS=["Bebidas","Lácteos","Snacks","Abarrotes","Panadería","Frutas y verduras","Helados","Carnes","Aseo","Limpieza","Recargas","Otros"];
 
@@ -849,13 +851,13 @@ async function adminCatalog(){
 function adminCatFilter(){
   const q=(($("catSearch")&&$("catSearch").value)||'').trim().toLowerCase();
   const rows=(window._cat||[]).filter(r=>!q||(r.name||'').toLowerCase().includes(q)||(r.barcode||'').includes(q)).slice(0,400);
-  $("catList").innerHTML=rows.length? rows.map(r=>`<div class="rowline" style="cursor:pointer" onclick="adminCatForm('${(r.barcode||'').replace(/'/g,'')}')"><span>${EMOJI[r.category]||'📦'} ${r.name||'(sin nombre)'}<br><span class="muted" style="font-size:11px">${r.barcode||''} · ${r.category||''}${(r.price>0)?' · PVP '+money(r.price):''}</span></span><span class="muted">✏️</span></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin resultados.</div>';
+  $("catList").innerHTML=rows.length? rows.map(r=>`<div class="rowline" style="cursor:pointer" onclick="adminCatForm('${(r.barcode||'').replace(/'/g,'')}')"><span>${EMOJI[r.category]||'📦'} ${r.name||'(sin nombre)'}<br><span class="muted" style="font-size:11px">${isSyn(r.barcode)?'sin código':(r.barcode||'')} · ${r.category||''}${(r.price>0)?' · PVP '+money(r.price):''}</span></span><span class="muted">✏️</span></div>`).join('') : '<div class="rowline" style="color:var(--muted)">Sin resultados.</div>';
 }
 function adminCatForm(barcode){
   const item=barcode? (window._cat||[]).find(r=>r.barcode===barcode):null;
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">${item?'Editar producto':'Agregar al catálogo'}</h2><button class="ghost" style="width:auto;margin:0" onclick="adminCatalog()">Volver</button></div>
-    <div class="field"><label>Código de barras</label><div style="display:flex;gap:8px"><input id="ac_bc" style="flex:1" value="${item?item.barcode:''}" placeholder="Escríbelo o escanéalo"><button type="button" class="cambtn f" onclick="scanAdminBc()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div></div>
+    <div class="field"><label>Código de barras (opcional)</label><div style="display:flex;gap:8px"><input id="ac_bc" style="flex:1" value="${item&&!isSyn(item.barcode)?item.barcode:''}" placeholder="Déjalo vacío si es artesanal"><button type="button" class="cambtn f" onclick="scanAdminBc()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button></div><p class="muted" style="font-size:11px;margin:4px 0 0">Si el producto es artesanal (sin código), déjalo en blanco.</p></div>
     <div class="field"><label>Nombre</label><input id="ac_nm" value="${item?(item.name||'').replace(/"/g,'&quot;'):''}"></div>
     <div class="field"><label>Categoría</label><select id="ac_cat">${catOptions(item?item.category:'Otros')}</select></div>
     <div class="field"><label>Precio de venta al público (PVP) $</label><input id="ac_price" type="number" inputmode="decimal" value="${item&&item.price!=null?item.price:''}" placeholder="Sugerido (cada tienda puede cambiarlo)"></div>
@@ -864,10 +866,11 @@ function adminCatForm(barcode){
    </div>`;
 }
 async function saveCatForm(orig){
-  const bc=($("ac_bc").value||'').trim(), nm=($("ac_nm").value||'').trim(), cat=$("ac_cat").value, price=($("ac_price").value!==''?(+$("ac_price").value||0):null);
-  if(!bc) return toast("Falta el código de barras");
+  let bc=($("ac_bc").value||'').trim();
+  const nm=($("ac_nm").value||'').trim(), cat=$("ac_cat").value, price=($("ac_price").value!==''?(+$("ac_price").value||0):null);
   if(!nm) return toast("Falta el nombre");
-  if(!orig && (window._cat||[]).some(x=>x.barcode===bc)){ toast("Ese producto ya existe en el catálogo"); adminCatForm(bc); return; }
+  if(!bc){ bc = (orig && isSyn(orig)) ? orig : synId(); }   // artesanal: reusa o genera id interno
+  else { if((!orig || isSyn(orig)) && (window._cat||[]).some(x=>x.barcode===bc)){ toast("Ese producto ya existe en el catálogo"); adminCatForm(bc); return; } }
   try{
     await SB.from('catalogo').upsert({barcode:bc,name:nm,category:cat,price:price,updated_at:new Date().toISOString()});
     if(orig && orig!==bc){ await SB.from('catalogo').delete().eq('barcode',orig); }
@@ -1085,8 +1088,12 @@ function renderCatalogPick(q,fc){
   const box=$("invList");
   if(!window._storeCat){ box.innerHTML='<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Cargando catálogo…</div>'; loadStoreCatalog(); return; }
   const haveBc=new Set(P.filter(p=>p.barcode).map(p=>p.barcode));
+  const haveCat=new Set(P.map(p=>p.catId).filter(Boolean));
   const archived=P.filter(p=>p.archived && (!q||p.name.toLowerCase().includes(q)||(p.barcode&&p.barcode.includes(q))) && (!fc||p.category===fc));
-  const avail=(window._storeCat||[]).filter(c=>c.barcode && !haveBc.has(c.barcode) && (!q||(c.name||'').toLowerCase().includes(q)||c.barcode.includes(q)) && (!fc||c.category===fc)).slice(0,400);
+  const avail=(window._storeCat||[]).filter(c=>{ const k=c.barcode; if(!k) return false;
+    if(haveCat.has(k)) return false; if(!isSyn(k) && haveBc.has(k)) return false;
+    if(q && !((c.name||'').toLowerCase().includes(q) || (!isSyn(k)&&k.includes(q)))) return false;
+    if(fc && c.category!==fc) return false; return true; }).slice(0,400);
   let html='';
   if(archived.length){
     html+='<div class="rowline" style="color:var(--muted);font-weight:800">Archivados de tu tienda</div>';
@@ -1098,17 +1105,17 @@ function renderCatalogPick(q,fc){
   html+='<div class="rowline" style="color:var(--muted);font-weight:800">Disponibles del catálogo — toca para agregar</div>';
   html+= avail.length? avail.map(c=>`<div class="prod" onclick="addFromCatalog('${(c.barcode||'').replace(/'/g,'')}')">
       <div class="av ok">${EMOJI[c.category]||'📦'}</div>
-      <div class="info"><b>${c.name||'(sin nombre)'}</b><span>${c.barcode} · <span class="pill">${c.category||'Otros'}</span>${(c.price>0)?' · PVP '+money(c.price):''}</span></div>
+      <div class="info"><b>${c.name||'(sin nombre)'}</b><span>${isSyn(c.barcode)?'sin código':c.barcode} · <span class="pill">${c.category||'Otros'}</span>${(c.price>0)?' · PVP '+money(c.price):''}</span></div>
       <div class="pr" style="color:var(--brand);font-weight:800">+ Agregar</div></div>`).join('')
       : '<div class="empty" style="padding:20px;text-align:center;color:var(--muted)">Todo el catálogo ya está en tu inventario.</div>';
   box.innerHTML=html;
 }
-async function addFromCatalog(bc){
-  const c=(window._storeCat||[]).find(x=>x.barcode===bc); if(!c)return;
-  if(P.find(p=>p.barcode===bc)){ toast("Ya está en tu inventario"); return; }
+async function addFromCatalog(key){
+  const c=(window._storeCat||[]).find(x=>x.barcode===key); if(!c)return;
+  if(P.find(p=>p.catId===key || (!isSyn(key)&&p.barcode===key))){ toast("Ya está en tu inventario"); return; }
   const pvp=(typeof c.price==='number'&&c.price>0)?c.price:0;
-  const nuevo={id:uid(),barcode:bc,name:c.name||'Producto',category:c.category||'Otros',location:'',cost:0,price:pvp,stock:0,minStock:3,quick:false,archived:false};
-  P.push(nuevo); await saveOneProduct(nuevo); renderInv(); fillFilters(); toast("Agregado: "+nuevo.name+(pvp?(" · PVP "+money(pvp)):" — ponle precio")+" y stock");
+  const nuevo={id:uid(),barcode:isSyn(key)?'':key,catId:key,name:c.name||'Producto',category:c.category||'Otros',location:'',cost:0,price:pvp,stock:0,minStock:3,quick:isSyn(key),archived:false};
+  P.push(nuevo); await saveOneProduct(nuevo); renderInv(); fillFilters(); renderQuick(); toast("Agregado: "+nuevo.name+(pvp?(" · PVP "+money(pvp)):" — ponle precio")+" y stock");
 }
 
 /* ---- Modal helpers ---- */

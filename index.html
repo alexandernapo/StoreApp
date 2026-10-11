@@ -837,7 +837,7 @@ async function adminReport(code){
 }
 async function adminCatalog(){
   toast("Cargando catálogo…");
-  let rows=[]; try{ let from=0; const page=1000; while(true){ const {data,error}=await SB.from('catalogo').select('barcode,name,category,price').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
+  let rows=[]; try{ let from=0; const page=1000; while(true){ const {data,error}=await SB.from('catalogo').select('*').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
   window._cat=rows;
   $("loginInner").innerHTML=`<div style="width:100%;text-align:left">
     <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">📚 Catálogo (${rows.length})</h2><button class="ghost" style="width:auto;margin:0" onclick="showAdmin()">Volver</button></div>
@@ -871,11 +871,14 @@ async function saveCatForm(orig){
   if(!nm) return toast("Falta el nombre");
   if(!bc){ bc = (orig && isSyn(orig)) ? orig : synId(); }   // artesanal: reusa o genera id interno
   else { if((!orig || isSyn(orig)) && (window._cat||[]).some(x=>x.barcode===bc)){ toast("Ese producto ya existe en el catálogo"); adminCatForm(bc); return; } }
+  const base={barcode:bc,name:nm,category:cat,updated_at:new Date().toISOString()};
   try{
-    await SB.from('catalogo').upsert({barcode:bc,name:nm,category:cat,price:price,updated_at:new Date().toISOString()});
+    let {error}=await SB.from('catalogo').upsert(Object.assign({price:price}, base));
+    if(error){ const r2=await SB.from('catalogo').upsert(base); error=r2.error; if(!error) toast("Guardado (sin precio: falta la columna price)"); }
+    if(error){ toast("No se pudo: "+(error.message||error.code)); return; }
     if(orig && orig!==bc){ await SB.from('catalogo').delete().eq('barcode',orig); }
-    toast("Catálogo guardado ✓"); adminCatalog();
-  }catch(e){ toast("No se pudo guardar"); }
+    if(!error) toast("Catálogo guardado ✓"); adminCatalog();
+  }catch(e){ toast("No se pudo guardar: "+(e&&e.message||'')); }
 }
 async function deleteCatItem(bc){
   if(!confirm("¿Eliminar "+bc+" del catálogo compartido?"))return;
@@ -1081,7 +1084,7 @@ function renderInv(){
     :'<div class="empty" style="padding:30px;text-align:center;color:var(--muted)">Sin resultados.</div>';
 }
 async function loadStoreCatalog(){
-  let rows=[]; try{ let from=0; const page=1000; while(sbOn&&SB){ const {data,error}=await SB.from('catalogo').select('barcode,name,category,price').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
+  let rows=[]; try{ let from=0; const page=1000; while(sbOn&&SB){ const {data,error}=await SB.from('catalogo').select('*').range(from,from+page-1); if(error)break; rows=rows.concat(data||[]); if(!data||data.length<page)break; from+=page; } }catch(e){}
   window._storeCat=rows; if($("fEstado")&&$("fEstado").value==='arch') renderInv();
 }
 function renderCatalogPick(q,fc){
@@ -1705,7 +1708,7 @@ function scanField(id){ openScanner(code=>{ const f=$(id); if(f){ f.value=code; 
 }); }
 async function cbGet(code){
   if(!(sbOn&&SB)) return null;
-  try{ const {data,error}=await SB.from('catalogo').select('name,category,price').eq('barcode',code).maybeSingle();
+  try{ const {data,error}=await SB.from('catalogo').select('*').eq('barcode',code).maybeSingle();
     if(error||!data) return null; return {name:data.name, category:data.category, price:data.price}; }catch(e){ return null; }
 }
 async function cbPut(code,name,category,price){
@@ -1732,7 +1735,7 @@ async function importFromCatalog(){
   try{
     let rows=[], from=0; const page=1000;
     while(true){
-      const {data,error}=await SB.from('catalogo').select('barcode,name,category,price').range(from,from+page-1);
+      const {data,error}=await SB.from('catalogo').select('*').range(from,from+page-1);
       if(error) throw error;
       rows=rows.concat(data||[]);
       if(!data||data.length<page) break; from+=page;

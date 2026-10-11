@@ -867,6 +867,7 @@ async function saveCatForm(orig){
   const bc=($("ac_bc").value||'').trim(), nm=($("ac_nm").value||'').trim(), cat=$("ac_cat").value, price=($("ac_price").value!==''?(+$("ac_price").value||0):null);
   if(!bc) return toast("Falta el código de barras");
   if(!nm) return toast("Falta el nombre");
+  if(!orig && (window._cat||[]).some(x=>x.barcode===bc)){ toast("Ese producto ya existe en el catálogo"); adminCatForm(bc); return; }
   try{
     await SB.from('catalogo').upsert({barcode:bc,name:nm,category:cat,price:price,updated_at:new Date().toISOString()});
     if(orig && orig!==bc){ await SB.from('catalogo').delete().eq('barcode',orig); }
@@ -877,7 +878,11 @@ async function deleteCatItem(bc){
   if(!confirm("¿Eliminar "+bc+" del catálogo compartido?"))return;
   try{ await SB.from('catalogo').delete().eq('barcode',bc); toast("Eliminado del catálogo"); adminCatalog(); }catch(e){ toast("No se pudo"); }
 }
-function scanAdminBc(){ openScanner(code=>{ const f=$("ac_bc"); if(f) f.value=code; }); }
+function scanAdminBc(){ openScanner(code=>{
+  const ex=(window._cat||[]).find(x=>x.barcode===code);
+  if(ex){ toast("Ya existe: "+(ex.name||code)); adminCatForm(code); return; }
+  const f=$("ac_bc"); if(f) f.value=code;
+}); }
 async function migrarDatos(){
   if(!(sbOn&&SB)||!TIENDA) return toast("Inicia sesión en una tienda");
   if(!confirm("Asignar a la tienda \""+TIENDA+"\" todos los productos, fiados y ventas que aún NO tienen tienda. ¿Continuar?"))return;
